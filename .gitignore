@@ -9,8 +9,8 @@
 *.dylib
 
 # Project binaries
-scheduler
-worker
+/scheduler
+/worker
 bin/
 
 # Test binary, built with `go test -c`
