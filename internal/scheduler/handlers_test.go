@@ -114,3 +114,93 @@ func TestHandleListWorkers(t *testing.T) {
 		t.Errorf("Response has %d workers, want 1", len(workers))
 	}
 }
+
+// Error scenario tests
+
+func TestHandleHeartbeat_MethodNotAllowed(t *testing.T) {
+	sm := NewStateManager()
+	handler := NewHandler(sm)
+
+	req := httptest.NewRequest("GET", "/api/v1/heartbeat", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleHeartbeat(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("HandleHeartbeat() with GET status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleHeartbeat_InvalidJSON(t *testing.T) {
+	sm := NewStateManager()
+	handler := NewHandler(sm)
+
+	// Send malformed JSON
+	body := []byte(`{"workerID": "test", invalid json}`)
+	req := httptest.NewRequest("POST", "/api/v1/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleHeartbeat(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("HandleHeartbeat() with invalid JSON status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleSchedule_MethodNotAllowed(t *testing.T) {
+	sm := NewStateManager()
+	handler := NewHandler(sm)
+
+	req := httptest.NewRequest("GET", "/api/v1/schedule", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleSchedule(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("HandleSchedule() with GET status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleSchedule_NoAvailableWorkers(t *testing.T) {
+	sm := NewStateManager()
+	handler := NewHandler(sm)
+
+	// Don't add any workers - should have no available workers
+	req := &types.ScheduleRequest{
+		TaskID:       "task-001",
+		RequiredTags: []string{"gpu"},
+	}
+
+	body, _ := json.Marshal(req)
+	httpReq := httptest.NewRequest("POST", "/api/v1/schedule", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleSchedule(w, httpReq)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("HandleSchedule() with no workers status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+
+	var resp types.ScheduleResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp.Error == "" {
+		t.Error("Expected error message in response when no workers available")
+	}
+}
+
+func TestHandleListWorkers_MethodNotAllowed(t *testing.T) {
+	sm := NewStateManager()
+	handler := NewHandler(sm)
+
+	req := httptest.NewRequest("POST", "/api/v1/workers", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleListWorkers(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("HandleListWorkers() with POST status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}

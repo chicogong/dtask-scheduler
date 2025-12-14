@@ -39,6 +39,7 @@ func (h *Handler) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Heartbeat received from %s: %d/%d tasks", hb.WorkerID, hb.CurrentTasks, hb.MaxTasks)
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -58,6 +59,7 @@ func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 
 	resp := h.scheduler.Schedule(&req)
 
+	w.Header().Set("Content-Type", "application/json")
 	if resp.Error != "" {
 		log.Printf("Schedule failed for task %s: %s", req.TaskID, resp.Error)
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -65,8 +67,6 @@ func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Task %s scheduled to %s", req.TaskID, resp.WorkerID)
 		w.WriteHeader(http.StatusOK)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
