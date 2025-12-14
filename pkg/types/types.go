@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// Error definitions
+var (
+	ErrWorkerNotFound = errors.New("worker not found")
+	ErrNoCapacity     = errors.New("worker has no available capacity")
+)
+
 // Heartbeat represents worker health and capacity info
 type Heartbeat struct {
 	WorkerID     string   `json:"worker_id"`

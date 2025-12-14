@@ -93,3 +93,22 @@ func (sm *StateManager) CheckTimeouts() {
 		}
 	}
 }
+
+// AllocateTask optimistically increments task count for a worker
+func (sm *StateManager) AllocateTask(workerID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	worker, exists := sm.workers[workerID]
+	if !exists {
+		return types.ErrWorkerNotFound
+	}
+
+	if worker.Available <= 0 {
+		return types.ErrNoCapacity
+	}
+
+	worker.CurrentTasks++
+	worker.Available--
+	return nil
+}

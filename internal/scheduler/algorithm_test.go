@@ -199,3 +199,93 @@ func TestScheduler_Schedule(t *testing.T) {
 		})
 	}
 }
+
+func TestScheduler_OptimisticAllocation(t *testing.T) {
+	sm := NewStateManager()
+
+	// Add a worker with specific capacity
+	sm.workers = map[string]*types.WorkerState{
+		"worker-001": {
+			WorkerID:     "worker-001",
+			Address:      "192.168.1.100:8080",
+			ResourceTags: []string{"cpu"},
+			MaxTasks:     10,
+			CurrentTasks: 5,
+			Available:    5,
+			Status:       types.WorkerOnline,
+		},
+	}
+
+	sched := NewScheduler(sm)
+
+	req := &types.ScheduleRequest{
+		TaskID:       "task-001",
+		RequiredTags: []string{"cpu"},
+	}
+
+	// Schedule a task
+	resp := sched.Schedule(req)
+	if resp.Error != "" {
+		t.Fatalf("Schedule() failed: %s", resp.Error)
+	}
+
+	// Verify optimistic allocation updated the worker state
+	worker, exists := sm.GetWorker("worker-001")
+	if !exists {
+		t.Fatal("Worker not found after scheduling")
+	}
+
+	if worker.CurrentTasks != 6 {
+		t.Errorf("CurrentTasks = %d, want 6 (5 + 1 optimistic allocation)", worker.CurrentTasks)
+	}
+
+	if worker.Available != 4 {
+		t.Errorf("Available = %d, want 4 (5 - 1 optimistic allocation)", worker.Available)
+	}
+}
+
+func TestScheduler_SelectBestWorkerDoesNotMutateInput(t *testing.T) {
+	sm := NewStateManager()
+	sched := NewScheduler(sm)
+
+	workers := []*types.WorkerState{
+		{
+			WorkerID:     "worker-001",
+			MaxTasks:     30,
+			CurrentTasks: 20,
+			Available:    10,
+			Status:       types.WorkerOnline,
+		},
+		{
+			WorkerID:     "worker-002",
+			MaxTasks:     30,
+			CurrentTasks: 10,
+			Available:    20,
+			Status:       types.WorkerOnline,
+		},
+		{
+			WorkerID:     "worker-003",
+			MaxTasks:     30,
+			CurrentTasks: 15,
+			Available:    15,
+			Status:       types.WorkerOnline,
+		},
+	}
+
+	// Store original order
+	originalFirstID := workers[0].WorkerID
+
+	// Call selectBestWorker
+	best := sched.selectBestWorker(workers)
+
+	// Verify input slice was not mutated
+	if workers[0].WorkerID != originalFirstID {
+		t.Errorf("selectBestWorker() mutated input slice: first element changed from %s to %s",
+			originalFirstID, workers[0].WorkerID)
+	}
+
+	// Verify best worker is correct
+	if best.WorkerID != "worker-002" {
+		t.Errorf("selectBestWorker() = %s, want worker-002 (lowest load)", best.WorkerID)
+	}
+}

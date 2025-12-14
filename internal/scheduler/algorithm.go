@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"log"
 	"sort"
 
 	"github.com/chicogong/dtask-scheduler/pkg/types"
@@ -45,13 +46,18 @@ func (s *Scheduler) Schedule(req *types.ScheduleRequest) *types.ScheduleResponse
 	// Select best worker (lowest load ratio)
 	best := s.selectBestWorker(candidates)
 
-	// Optimistic allocation: increment task count immediately
-	s.state.mu.Lock()
-	if worker, exists := s.state.workers[best.WorkerID]; exists {
-		worker.CurrentTasks++
-		worker.Available--
+	// Defensive nil check
+	if best == nil {
+		return &types.ScheduleResponse{
+			Error: "failed to select best worker",
+		}
 	}
-	s.state.mu.Unlock()
+
+	// Optimistic allocation: increment task count immediately
+	err := s.state.AllocateTask(best.WorkerID)
+	if err != nil {
+		log.Printf("Warning: failed to allocate task to %s: %v", best.WorkerID, err)
+	}
 
 	return &types.ScheduleResponse{
 		WorkerID: best.WorkerID,
@@ -93,12 +99,16 @@ func (s *Scheduler) selectBestWorker(workers []*types.WorkerState) *types.Worker
 		return nil
 	}
 
+	// Make a copy to avoid mutating input slice
+	workersCopy := make([]*types.WorkerState, len(workers))
+	copy(workersCopy, workers)
+
 	// Sort by load ratio (ascending)
-	sort.Slice(workers, func(i, j int) bool {
-		return workers[i].LoadRatio() < workers[j].LoadRatio()
+	sort.Slice(workersCopy, func(i, j int) bool {
+		return workersCopy[i].LoadRatio() < workersCopy[j].LoadRatio()
 	})
 
-	return workers[0]
+	return workersCopy[0]
 }
 
 // hasAllTags checks if worker has all required tags
