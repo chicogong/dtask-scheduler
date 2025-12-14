@@ -1,0 +1,118 @@
+package scheduler
+
+import (
+	"sort"
+
+	"github.com/chicogong/dtask-scheduler/pkg/types"
+)
+
+// Scheduler implements the scheduling algorithm
+type Scheduler struct {
+	state *StateManager
+}
+
+// NewScheduler creates a new scheduler
+func NewScheduler(state *StateManager) *Scheduler {
+	return &Scheduler{
+		state: state,
+	}
+}
+
+// Schedule assigns a task to the best available worker
+func (s *Scheduler) Schedule(req *types.ScheduleRequest) *types.ScheduleResponse {
+	if err := req.Validate(); err != nil {
+		return &types.ScheduleResponse{
+			Error: err.Error(),
+		}
+	}
+
+	// Get all workers
+	workers := s.state.ListWorkers()
+
+	// Filter by resource tags
+	candidates := s.filterByTags(workers, req.RequiredTags)
+
+	// Filter out offline or full workers
+	candidates = s.filterAvailable(candidates)
+
+	// No available workers
+	if len(candidates) == 0 {
+		return &types.ScheduleResponse{
+			Error: "no available worker matching requirements",
+		}
+	}
+
+	// Select best worker (lowest load ratio)
+	best := s.selectBestWorker(candidates)
+
+	// Optimistic allocation: increment task count immediately
+	s.state.mu.Lock()
+	if worker, exists := s.state.workers[best.WorkerID]; exists {
+		worker.CurrentTasks++
+		worker.Available--
+	}
+	s.state.mu.Unlock()
+
+	return &types.ScheduleResponse{
+		WorkerID: best.WorkerID,
+		Address:  best.Address,
+	}
+}
+
+// filterByTags filters workers that have all required tags
+func (s *Scheduler) filterByTags(workers []*types.WorkerState, requiredTags []string) []*types.WorkerState {
+	if len(requiredTags) == 0 {
+		return workers
+	}
+
+	var result []*types.WorkerState
+	for _, worker := range workers {
+		if hasAllTags(worker.ResourceTags, requiredTags) {
+			result = append(result, worker)
+		}
+	}
+
+	return result
+}
+
+// filterAvailable filters out offline or full workers
+func (s *Scheduler) filterAvailable(workers []*types.WorkerState) []*types.WorkerState {
+	var result []*types.WorkerState
+	for _, worker := range workers {
+		if worker.Status == types.WorkerOnline && worker.Available > 0 {
+			result = append(result, worker)
+		}
+	}
+
+	return result
+}
+
+// selectBestWorker selects the worker with the lowest load ratio
+func (s *Scheduler) selectBestWorker(workers []*types.WorkerState) *types.WorkerState {
+	if len(workers) == 0 {
+		return nil
+	}
+
+	// Sort by load ratio (ascending)
+	sort.Slice(workers, func(i, j int) bool {
+		return workers[i].LoadRatio() < workers[j].LoadRatio()
+	})
+
+	return workers[0]
+}
+
+// hasAllTags checks if worker has all required tags
+func hasAllTags(workerTags, requiredTags []string) bool {
+	tagSet := make(map[string]bool)
+	for _, tag := range workerTags {
+		tagSet[tag] = true
+	}
+
+	for _, required := range requiredTags {
+		if !tagSet[required] {
+			return false
+		}
+	}
+
+	return true
+}
