@@ -16,7 +16,7 @@ Worker heartbeat endpoint. Workers should send heartbeats every 3 seconds.
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:8080",
+  "address": "192.168.1.100:9000",
   "resource_tags": ["gpu", "cuda-12.0", "cpu-64core"],
   "max_tasks": 30,
   "current_tasks": 15,
@@ -54,7 +54,7 @@ Schedule a task to an available worker.
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:8080"
+  "address": "192.168.1.100:9000"
 }
 ```
 
@@ -82,7 +82,7 @@ List all workers and their current state.
 [
   {
     "WorkerID": "worker-001",
-    "Address": "192.168.1.100:8080",
+    "Address": "192.168.1.100:9000",
     "ResourceTags": ["gpu", "cuda-12.0"],
     "MaxTasks": 30,
     "CurrentTasks": 15,

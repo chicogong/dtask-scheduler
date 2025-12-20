@@ -288,7 +288,7 @@ func TestStateManager_UpdateFromHeartbeat(t *testing.T) {
 
 	hb := &types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu", "cuda-12.0"},
 		MaxTasks:     30,
 		CurrentTasks: 15,
@@ -321,7 +321,7 @@ func TestStateManager_ListWorkers(t *testing.T) {
 	// Add two workers
 	sm.UpdateFromHeartbeat(&types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu"},
 		MaxTasks:     30,
 		CurrentTasks: 10,
@@ -330,7 +330,7 @@ func TestStateManager_ListWorkers(t *testing.T) {
 
 	sm.UpdateFromHeartbeat(&types.Heartbeat{
 		WorkerID:     "worker-002",
-		Address:      "192.168.1.101:8080",
+		Address:      "192.168.1.101:9000",
 		ResourceTags: []string{"cpu"},
 		MaxTasks:     30,
 		CurrentTasks: 20,
@@ -349,7 +349,7 @@ func TestStateManager_TimeoutDetection(t *testing.T) {
 	// Add worker with old heartbeat
 	sm.UpdateFromHeartbeat(&types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu"},
 		MaxTasks:     30,
 		CurrentTasks: 10,
@@ -633,7 +633,7 @@ func TestScheduler_Schedule(t *testing.T) {
 	sm.workers = map[string]*types.WorkerState{
 		"worker-001": {
 			WorkerID:     "worker-001",
-			Address:      "192.168.1.100:8080",
+			Address:      "192.168.1.100:9000",
 			ResourceTags: []string{"gpu", "cuda-12.0"},
 			MaxTasks:     30,
 			CurrentTasks: 10,
@@ -642,7 +642,7 @@ func TestScheduler_Schedule(t *testing.T) {
 		},
 		"worker-002": {
 			WorkerID:     "worker-002",
-			Address:      "192.168.1.101:8080",
+			Address:      "192.168.1.101:9000",
 			ResourceTags: []string{"cpu"},
 			MaxTasks:     30,
 			CurrentTasks: 5,
@@ -892,7 +892,7 @@ func TestHandleHeartbeat(t *testing.T) {
 
 	hb := &types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu"},
 		MaxTasks:     30,
 		CurrentTasks: 10,
@@ -928,7 +928,7 @@ func TestHandleSchedule(t *testing.T) {
 	// Add a worker
 	sm.UpdateFromHeartbeat(&types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu"},
 		MaxTasks:     30,
 		CurrentTasks: 10,
@@ -966,7 +966,7 @@ func TestHandleListWorkers(t *testing.T) {
 	// Add workers
 	sm.UpdateFromHeartbeat(&types.Heartbeat{
 		WorkerID:     "worker-001",
-		Address:      "192.168.1.100:8080",
+		Address:      "192.168.1.100:9000",
 		ResourceTags: []string{"gpu"},
 		MaxTasks:     30,
 		CurrentTasks: 10,
@@ -1457,7 +1457,7 @@ func TestEndToEndScheduling(t *testing.T) {
 	workers := []types.Heartbeat{
 		{
 			WorkerID:     "worker-001",
-			Address:      "192.168.1.100:8080",
+			Address:      "192.168.1.100:9000",
 			ResourceTags: []string{"gpu", "cuda-12.0"},
 			MaxTasks:     30,
 			CurrentTasks: 10,
@@ -1465,7 +1465,7 @@ func TestEndToEndScheduling(t *testing.T) {
 		},
 		{
 			WorkerID:     "worker-002",
-			Address:      "192.168.1.101:8080",
+			Address:      "192.168.1.101:9000",
 			ResourceTags: []string{"cpu", "avx2"},
 			MaxTasks:     30,
 			CurrentTasks: 5,
@@ -1714,7 +1714,7 @@ Worker heartbeat endpoint. Workers should send heartbeats every 3 seconds.
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:8080",
+  "address": "192.168.1.100:9000",
   "resource_tags": ["gpu", "cuda-12.0", "cpu-64core"],
   "max_tasks": 30,
   "current_tasks": 15,
@@ -1752,7 +1752,7 @@ Schedule a task to an available worker.
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:8080"
+  "address": "192.168.1.100:9000"
 }
 ```
 
@@ -1780,7 +1780,7 @@ List all workers and their current state.
 [
   {
     "WorkerID": "worker-001",
-    "Address": "192.168.1.100:8080",
+    "Address": "192.168.1.100:9000",
     "ResourceTags": ["gpu", "cuda-12.0"],
     "MaxTasks": 30,
     "CurrentTasks": 15,
@@ -1906,7 +1906,6 @@ curl -X POST http://localhost:8080/api/v1/schedule \
 ```bash
 # Production config
 export PORT=8080
-export LOG_LEVEL=info
 
 ./scheduler --port=$PORT
 ```

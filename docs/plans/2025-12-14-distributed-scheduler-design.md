@@ -266,7 +266,7 @@ selectedWorker.Available -= 1
 ```go
 type WorkerState struct {
     WorkerID      string        // "worker-001"
-    Address       string        // "192.168.1.100:8080"
+    Address       string        // "192.168.1.100:9000"
     ResourceTags  []string      // ["gpu", "cuda-12.0", "cpu-64core"]
     MaxTasks      int           // 30
     CurrentTasks  int           // 15

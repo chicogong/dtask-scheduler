@@ -1,13 +1,13 @@
-# Quick Start Guide
+# 快速开始指南
 
-## Prerequisites
+## 前置条件
 
-- Go 1.21 or later
-- Network connectivity between scheduler and workers
+- Go 1.21 或更高版本
+- 调度器与 Worker 之间网络互通
 
-## Installation
+## 安装
 
-### Clone and Build
+### 克隆并构建
 
 ```bash
 git clone https://github.com/chicogong/dtask-scheduler.git
@@ -16,21 +16,21 @@ go build -o bin/scheduler ./cmd/scheduler
 go build -o bin/worker ./cmd/worker
 ```
 
-## Running Locally
+## 本地运行
 
-### Terminal 1: Start Scheduler
+### 终端 1: 启动调度器
 
 ```bash
 ./bin/scheduler --port=8080
 ```
 
-Expected output:
+预期输出:
 ```
 dtask-scheduler starting...
 Scheduler listening on port 8080
 ```
 
-### Terminal 2: Start GPU Worker
+### 终端 2: 启动 GPU Worker
 
 ```bash
 ./bin/worker \
@@ -41,7 +41,7 @@ Scheduler listening on port 8080
   --scheduler=http://localhost:8080
 ```
 
-### Terminal 3: Start CPU Worker
+### 终端 3: 启动 CPU Worker
 
 ```bash
 ./bin/worker \
@@ -52,43 +52,43 @@ Scheduler listening on port 8080
   --scheduler=http://localhost:8080
 ```
 
-### Terminal 4: Test Scheduling
+### 终端 4: 测试调度
 
 ```bash
-# List workers
+# 查看 Worker 列表
 curl http://localhost:8080/api/v1/workers | jq
 
-# Schedule GPU task
+# 调度 GPU 任务
 curl -X POST http://localhost:8080/api/v1/schedule \
   -H "Content-Type: application/json" \
   -d '{"task_id":"task-001","required_tags":["gpu"]}' | jq
 
-# Schedule CPU task
+# 调度 CPU 任务
 curl -X POST http://localhost:8080/api/v1/schedule \
   -H "Content-Type: application/json" \
   -d '{"task_id":"task-002","required_tags":["cpu"]}' | jq
 
-# Schedule any task (load balancing)
+# 调度任意任务 (负载均衡)
 curl -X POST http://localhost:8080/api/v1/schedule \
   -H "Content-Type: application/json" \
   -d '{"task_id":"task-003","required_tags":[]}' | jq
 ```
 
-## Production Deployment
+## 生产部署
 
-### Scheduler (on dedicated machine)
+### 调度器 (独立机器)
 
 ```bash
-# Production config
+# 生产配置示例
 export PORT=8080
 
 ./scheduler --port=$PORT
 ```
 
-### Workers (on compute machines)
+### Worker (计算节点)
 
 ```bash
-# GPU worker example
+# GPU Worker 示例
 ./worker \
   --id=$(hostname)-gpu \
   --addr=$(hostname -I | awk '{print $1}'):9000 \
@@ -96,7 +96,7 @@ export PORT=8080
   --max-tasks=30 \
   --scheduler=http://scheduler.example.com:8080
 
-# CPU worker example
+# CPU Worker 示例
 ./worker \
   --id=$(hostname)-cpu \
   --addr=$(hostname -I | awk '{print $1}'):9000 \
@@ -105,9 +105,9 @@ export PORT=8080
   --scheduler=http://scheduler.example.com:8080
 ```
 
-### Using systemd
+### 使用 systemd
 
-Create `/etc/systemd/system/dtask-worker.service`:
+创建 `/etc/systemd/system/dtask-worker.service`:
 
 ```ini
 [Unit]
@@ -130,7 +130,7 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+启用并启动:
 
 ```bash
 sudo systemctl enable dtask-worker
@@ -138,40 +138,40 @@ sudo systemctl start dtask-worker
 sudo systemctl status dtask-worker
 ```
 
-## Monitoring
+## 监控
 
-### Check Worker Status
+### 查看 Worker 状态
 
 ```bash
 watch -n 1 'curl -s http://localhost:8080/api/v1/workers | jq'
 ```
 
-### Logs
+### 日志
 
-Scheduler and worker logs go to stdout. Redirect to file:
+调度器与 Worker 日志输出到 stdout,可重定向到文件:
 
 ```bash
 ./scheduler 2>&1 | tee scheduler.log
 ./worker 2>&1 | tee worker.log
 ```
 
-## Troubleshooting
+## 排障
 
-### Worker not showing up
+### Worker 未显示
 
-1. Check network connectivity: `curl http://scheduler:8080/api/v1/workers`
-2. Check worker logs for heartbeat errors
-3. Verify scheduler URL is correct
+1. 检查网络连通性: `curl http://scheduler:8080/api/v1/workers`
+2. 检查 Worker 日志是否有心跳错误
+3. 确认 Scheduler URL 是否正确
 
-### Scheduling fails with "no available worker"
+### 调度失败并提示 "no available worker"
 
-1. Check if workers are online: `curl http://scheduler:8080/api/v1/workers`
-2. Verify required tags match worker tags
-3. Check if all workers are at max capacity
+1. 检查 Worker 是否在线: `curl http://scheduler:8080/api/v1/workers`
+2. 确认任务所需标签与 Worker 标签匹配
+3. 检查 Worker 是否达到最大并发
 
-### Worker shows as "offline"
+### Worker 显示为 "offline"
 
-1. Worker hasn't sent heartbeat in 20+ seconds
-2. Check worker process is running: `ps aux | grep worker`
-3. Check network connectivity
-4. Restart worker
+1. 20 秒以上未收到心跳
+2. 检查 Worker 进程是否运行: `ps aux | grep worker`
+3. 检查网络连通性
+4. 重启 Worker

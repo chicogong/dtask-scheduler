@@ -9,6 +9,13 @@
 
 A distributed CPU/GPU task scheduler for large-scale batch jobs across thousands of machines.
 
+## Documentation Index
+
+- Quick Start: [docs/quickstart.md](docs/quickstart.md)
+- API Documentation: [docs/api.md](docs/api.md)
+- Design Doc: [docs/plans/2025-12-14-distributed-scheduler-design.md](docs/plans/2025-12-14-distributed-scheduler-design.md)
+- MVP Implementation: [docs/plans/2025-12-14-mvp-implementation.md](docs/plans/2025-12-14-mvp-implementation.md)
+
 ## Features
 
 - **Zero dependencies**: No Redis, Kafka, or other middleware required
@@ -51,34 +58,76 @@ Client → Scheduler → Worker Pool (500+ machines)
          └─ Heartbeat (every 3s)
 ```
 
-See [Design Document](docs/plans/2025-12-14-distributed-scheduler-design.md) for details.
+See the [Design Document](docs/plans/2025-12-14-distributed-scheduler-design.md) for details.
+
+### Architecture (Mermaid)
+
+```mermaid
+flowchart LR
+    Client[Client\nAPI Caller] --> API[Scheduler API]
+    API --> State[State Manager\nin-memory]
+    API --> Algo[Scheduling Algorithm]
+    Algo --> W1[Worker A]
+    Algo --> W2[Worker B]
+    Algo --> W3[Worker N...]
+    W1 -.->|heartbeat| API
+    W2 -.->|heartbeat| API
+    W3 -.->|heartbeat| API
+```
+
+### Scheduling Flow (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Scheduler
+    participant State
+    participant Worker
+
+    Client->>Scheduler: POST /schedule (task_id, required_tags)
+    Scheduler->>State: Filter by tags & availability
+    Scheduler->>Scheduler: Sort by load ratio
+    Scheduler-->>Client: worker_id + address
+
+    loop every 3s
+        Worker->>Scheduler: POST /heartbeat (load, tags)
+        Scheduler->>State: Update worker state
+    end
+```
 
 ## Quick Start
+
+For a full local/production guide, see [docs/quickstart.md](docs/quickstart.md).
+
+### 0. Prerequisites
+
+- Go 1.21+
+- Network connectivity between scheduler and workers
 
 ### 1. Build
 
 ```bash
-go build -o scheduler ./cmd/scheduler
-go build -o worker ./cmd/worker
+go build -o bin/scheduler ./cmd/scheduler
+go build -o bin/worker ./cmd/worker
 ```
 
 ### 2. Start Scheduler
 
 ```bash
-./scheduler --port=8080
+./bin/scheduler --port=8080
 ```
 
 ### 3. Start Workers
 
 ```bash
 # GPU worker
-./worker --id=worker-001 --addr=192.168.1.100:9000 --tags=gpu,cuda-12.0 --max-tasks=30
+./bin/worker --id=worker-001 --addr=localhost:9001 --tags=gpu,cuda-12.0 --max-tasks=30 --scheduler=http://localhost:8080
 
 # CPU worker
-./worker --id=worker-002 --addr=192.168.1.101:9000 --tags=cpu,avx2 --max-tasks=30
+./bin/worker --id=worker-002 --addr=localhost:9002 --tags=cpu,avx2 --max-tasks=30 --scheduler=http://localhost:8080
 ```
 
-### 4. Schedule Tasks
+### 4. Schedule Task
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/schedule \
@@ -90,15 +139,73 @@ Response:
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:9000"
+  "address": "localhost:9001"
 }
 ```
 
-## API Documentation
+### 5. List Workers
 
-See [API Documentation](docs/api.md)
+```bash
+curl http://localhost:8080/api/v1/workers
+```
 
-## Testing
+## Runtime Flags
+
+### scheduler
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `8080` | Listening port |
+
+### worker
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--id` | `worker-001` | Worker ID |
+| `--addr` | `localhost:9000` | Worker address (returned in scheduling result) |
+| `--tags` | `cpu` | Resource tags, comma-separated |
+| `--max-tasks` | `30` | Maximum concurrent tasks |
+| `--scheduler` | `http://localhost:8080` | Scheduler base URL |
+
+## API Overview
+
+Base URL: `http://localhost:8080/api/v1`
+
+- `POST /heartbeat`: Worker heartbeat
+- `POST /schedule`: Schedule a task
+- `GET /workers`: List workers
+
+See [docs/api.md](docs/api.md) for details.
+
+## Scheduling Algorithm
+
+1. **Filter by tags**: Only workers with ALL required tags are considered
+2. **Filter by availability**: Offline workers or workers at max capacity are excluded
+3. **Sort by load ratio**: `load_ratio = current_tasks / max_tasks`
+4. **Select lowest**: Worker with lowest load ratio is selected
+5. **Optimistic allocation**: Task count incremented immediately (corrected by next heartbeat)
+
+## Project Structure
+
+```
+dtask-scheduler/
+├── cmd/
+│   ├── scheduler/      # Scheduler entry
+│   └── worker/         # Worker entry
+├── internal/
+│   ├── scheduler/      # Scheduler core logic
+│   │   ├── algorithm.go   # Scheduling algorithm
+│   │   ├── handlers.go    # HTTP handlers
+│   │   └── state.go       # State manager
+│   └── worker/         # Worker core logic
+│       └── heartbeat.go   # Heartbeat sender
+├── pkg/
+│   └── types/          # Shared types
+├── tests/              # Integration tests
+└── docs/               # Documentation
+```
+
+## Development & Testing
 
 ```bash
 # Unit tests
@@ -108,6 +215,22 @@ go test ./...
 go test ./tests -v
 ```
 
+## Use Cases
+
+- **Audio processing**: Large-scale transcoding, denoise, feature extraction
+- **Video processing**: Transcoding, editing, AI enhancement
+- **AI inference**: Dispatch model inference to GPU clusters
+- **Data processing**: Batch data cleaning and transformation
+- **Scientific computing**: Distributed computation scheduling
+
+## Tech Stack
+
+- **Language**: Go 1.21+
+- **Dependencies**: Standard library only (net/http, encoding/json, sync, etc.)
+- **Protocol**: HTTP/REST (heartbeat and scheduling API)
+- **Concurrency**: goroutines + context + sync.RWMutex
+- **Testing**: Standard testing + table-driven tests
+
 ## Roadmap
 
 - [x] MVP: Single scheduler + heartbeat + basic scheduling
@@ -115,6 +238,12 @@ go test ./tests -v
 - [ ] Monitoring: Metrics and alerting
 - [ ] Tag indexing: Faster resource filtering
 - [ ] Queue: Wait queue for resource shortage
+- [ ] Task priority: Preempting low-priority tasks
+- [ ] Resource reservation: CPU/memory/GPU memory reservations
+
+## Contributing
+
+Issues and pull requests are welcome!
 
 ## License
 

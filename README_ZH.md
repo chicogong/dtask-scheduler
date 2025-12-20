@@ -9,6 +9,13 @@
 
 一个面向大规模批处理任务的分布式 CPU/GPU 任务调度器,支持跨数千台机器的统一调度。
 
+## 文档索引
+
+- 快速开始: [docs/quickstart_zh.md](docs/quickstart_zh.md)
+- API 文档: [docs/api_zh.md](docs/api_zh.md)
+- 设计文档: [docs/plans/2025-12-14-distributed-scheduler-design.md](docs/plans/2025-12-14-distributed-scheduler-design.md)
+- MVP 实现: [docs/plans/2025-12-14-mvp-implementation.md](docs/plans/2025-12-14-mvp-implementation.md)
+
 ## 特性
 
 - **零依赖**: 无需 Redis、Kafka 等第三方中间件
@@ -51,31 +58,73 @@
          └─ 心跳 (每3秒)
 ```
 
-详见[设计文档](docs/plans/2025-12-14-distributed-scheduler-design.md)
+详见[设计文档](docs/plans/2025-12-14-distributed-scheduler-design.md)。
+
+### 架构图 (Mermaid)
+
+```mermaid
+flowchart LR
+    Client[客户端\nAPI 调用] --> API[调度器 API]
+    API --> State[状态管理\n内存存储]
+    API --> Algo[调度算法]
+    Algo --> W1[Worker A]
+    Algo --> W2[Worker B]
+    Algo --> W3[Worker N...]
+    W1 -.->|心跳| API
+    W2 -.->|心跳| API
+    W3 -.->|心跳| API
+```
+
+### 调度流程 (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant Scheduler as 调度器
+    participant State as 状态管理
+    participant Worker as Worker
+
+    Client->>Scheduler: POST /schedule (task_id, required_tags)
+    Scheduler->>State: 按标签+可用性过滤
+    Scheduler->>Scheduler: 按负载率排序
+    Scheduler-->>Client: 返回 worker_id + address
+
+    loop 每 3 秒
+        Worker->>Scheduler: POST /heartbeat (负载, 标签)
+        Scheduler->>State: 更新 Worker 状态
+    end
+```
 
 ## 快速开始
+
+更完整的部署、监控与排障说明见 [docs/quickstart_zh.md](docs/quickstart_zh.md)。
+
+### 0. 环境
+
+- Go 1.21+
+- 调度器与 Worker 网络可达
 
 ### 1. 构建
 
 ```bash
-go build -o scheduler ./cmd/scheduler
-go build -o worker ./cmd/worker
+go build -o bin/scheduler ./cmd/scheduler
+go build -o bin/worker ./cmd/worker
 ```
 
 ### 2. 启动调度器
 
 ```bash
-./scheduler --port=8080
+./bin/scheduler --port=8080
 ```
 
 ### 3. 启动 Worker
 
 ```bash
 # GPU Worker
-./worker --id=worker-001 --addr=192.168.1.100:9000 --tags=gpu,cuda-12.0 --max-tasks=30
+./bin/worker --id=worker-001 --addr=localhost:9001 --tags=gpu,cuda-12.0 --max-tasks=30 --scheduler=http://localhost:8080
 
 # CPU Worker
-./worker --id=worker-002 --addr=192.168.1.101:9000 --tags=cpu,avx2 --max-tasks=30
+./bin/worker --id=worker-002 --addr=localhost:9002 --tags=cpu,avx2 --max-tasks=30 --scheduler=http://localhost:8080
 ```
 
 ### 4. 调度任务
@@ -90,39 +139,43 @@ curl -X POST http://localhost:8080/api/v1/schedule \
 ```json
 {
   "worker_id": "worker-001",
-  "address": "192.168.1.100:9000"
+  "address": "localhost:9001"
 }
 ```
 
-## API 文档
-
-详见 [API 文档](docs/api.md)
-
-## 测试
+### 5. 查看 Worker
 
 ```bash
-# 单元测试
-go test ./...
-
-# 集成测试
-go test ./tests -v
+curl http://localhost:8080/api/v1/workers
 ```
 
-## 使用场景
+## 运行参数
 
-- **音频处理**: 大规模音频转码、降噪、特征提取
-- **视频处理**: 视频转码、剪辑、AI 增强
-- **AI 推理**: 模型推理任务分发到 GPU 集群
-- **数据处理**: 大批量数据清洗、转换任务
-- **科学计算**: 分布式计算任务调度
+### scheduler
 
-## 技术栈
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--port` | `8080` | 监听端口 |
 
-- **语言**: Go 1.21+
-- **依赖**: 仅标准库 (net/http, encoding/json, sync 等)
-- **协议**: HTTP/REST (heartbeat 和 scheduling API)
-- **并发**: goroutines + context + sync.RWMutex
-- **测试**: 标准 testing 包 + table-driven tests
+### worker
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--id` | `worker-001` | Worker ID |
+| `--addr` | `localhost:9000` | Worker 对外地址 (调度结果返回此值) |
+| `--tags` | `cpu` | 资源标签,逗号分隔 |
+| `--max-tasks` | `30` | 最大并发任务数 |
+| `--scheduler` | `http://localhost:8080` | 调度器地址 |
+
+## API 文档
+
+基地址: `http://localhost:8080/api/v1`
+
+- `POST /heartbeat`: Worker 心跳
+- `POST /schedule`: 调度任务
+- `GET /workers`: 列出 Worker
+
+详见 [API 文档](docs/api_zh.md)。
 
 ## 调度算法
 
@@ -151,6 +204,32 @@ dtask-scheduler/
 ├── tests/              # 集成测试
 └── docs/               # 文档
 ```
+
+## 开发与测试
+
+```bash
+# 单元测试
+go test ./...
+
+# 集成测试
+go test ./tests -v
+```
+
+## 使用场景
+
+- **音频处理**: 大规模音频转码、降噪、特征提取
+- **视频处理**: 视频转码、剪辑、AI 增强
+- **AI 推理**: 模型推理任务分发到 GPU 集群
+- **数据处理**: 大批量数据清洗、转换任务
+- **科学计算**: 分布式计算任务调度
+
+## 技术栈
+
+- **语言**: Go 1.21+
+- **依赖**: 仅标准库 (net/http, encoding/json, sync 等)
+- **协议**: HTTP/REST (heartbeat 和 scheduling API)
+- **并发**: goroutines + context + sync.RWMutex
+- **测试**: 标准 testing 包 + table-driven tests
 
 ## 开发路线图
 
