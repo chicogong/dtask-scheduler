@@ -1,3 +1,5 @@
+// Package worker provides worker-side functionality for the dtask-scheduler system.
+// It includes heartbeat sending and task count tracking for worker registration.
 package worker
 
 import (

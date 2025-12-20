@@ -7,19 +7,26 @@ import (
 	"github.com/chicogong/dtask-scheduler/pkg/types"
 )
 
-// Scheduler implements the scheduling algorithm
+// Scheduler implements the core scheduling algorithm that selects the best worker
+// for a given task based on resource tags and current load.
 type Scheduler struct {
 	state *StateManager
 }
 
-// NewScheduler creates a new scheduler
+// NewScheduler creates a new scheduler instance.
 func NewScheduler(state *StateManager) *Scheduler {
 	return &Scheduler{
 		state: state,
 	}
 }
 
-// Schedule assigns a task to the best available worker
+// Schedule assigns a task to the best available worker using the following algorithm:
+//  1. Filter workers by required resource tags
+//  2. Filter out offline or full workers
+//  3. Select worker with lowest load ratio (current_tasks / max_tasks)
+//  4. Optimistically increment task count
+//
+// Returns ScheduleResponse with worker details on success, or error message on failure.
 func (s *Scheduler) Schedule(req *types.ScheduleRequest) *types.ScheduleResponse {
 	if err := req.Validate(); err != nil {
 		return &types.ScheduleResponse{

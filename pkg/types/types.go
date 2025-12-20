@@ -1,3 +1,5 @@
+// Package types defines the core data structures used by the dtask-scheduler system.
+// It includes worker heartbeat data, scheduling requests/responses, and worker state management.
 package types
 
 import (
@@ -11,7 +13,8 @@ var (
 	ErrNoCapacity     = errors.New("worker has no available capacity")
 )
 
-// Heartbeat represents worker health and capacity info
+// Heartbeat represents worker health and capacity info sent periodically to the scheduler.
+// Workers send heartbeats every 3 seconds to maintain their registration and report current load.
 type Heartbeat struct {
 	WorkerID     string   `json:"worker_id"`
 	Timestamp    int64    `json:"timestamp"`
@@ -21,7 +24,8 @@ type Heartbeat struct {
 	Address      string   `json:"address"` // IP:Port for client connections
 }
 
-// WorkerState represents scheduler's view of a worker
+// WorkerState represents the scheduler's view of a worker, including its current load,
+// resource tags, and availability status. This is maintained in-memory by the StateManager.
 type WorkerState struct {
 	WorkerID     string
 	Address      string
@@ -33,6 +37,7 @@ type WorkerState struct {
 	Status       WorkerStatus
 }
 
+// WorkerStatus represents the health state of a worker based on heartbeat freshness.
 type WorkerStatus string
 
 const (
@@ -49,7 +54,8 @@ func (w *WorkerState) LoadRatio() float64 {
 	return float64(w.CurrentTasks) / float64(w.MaxTasks)
 }
 
-// ScheduleRequest represents a client's scheduling request
+// ScheduleRequest represents a client's request to schedule a task on a worker.
+// RequiredTags filters workers to only those matching ALL specified tags.
 type ScheduleRequest struct {
 	TaskID       string   `json:"task_id"`
 	RequiredTags []string `json:"required_tags"`
@@ -63,7 +69,8 @@ func (r *ScheduleRequest) Validate() error {
 	return nil
 }
 
-// ScheduleResponse represents scheduler's response
+// ScheduleResponse represents the scheduler's response to a scheduling request.
+// On success, WorkerID and Address are populated. On failure, Error contains the reason.
 type ScheduleResponse struct {
 	WorkerID string `json:"worker_id,omitempty"`
 	Address  string `json:"address,omitempty"`

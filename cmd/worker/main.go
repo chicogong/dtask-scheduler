@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chicogong/dtask-scheduler/internal/worker"
+	"github.com/chicogong/dtask-scheduler/pkg/worker"
 )
 
 func main() {

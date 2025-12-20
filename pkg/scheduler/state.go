@@ -1,3 +1,6 @@
+// Package scheduler implements the core scheduling logic for dtask-scheduler.
+// It manages worker state, handles HTTP API requests, and executes the load-based
+// scheduling algorithm.
 package scheduler
 
 import (
@@ -12,7 +15,8 @@ const (
 	OfflineThreshold    = 20 * time.Second
 )
 
-// StateManager manages worker states in memory
+// StateManager manages worker states in memory with thread-safe operations.
+// It tracks heartbeats, worker availability, and handles timeout detection.
 type StateManager struct {
 	mu      sync.RWMutex
 	workers map[string]*types.WorkerState

@@ -95,6 +95,12 @@ sequenceDiagram
     end
 ```
 
+## Installation
+
+```bash
+go get github.com/chicogong/dtask-scheduler@v1.0.0
+```
+
 ## Quick Start
 
 For a full local/production guide, see [docs/quickstart.md](docs/quickstart.md).
@@ -147,6 +153,115 @@ Response:
 
 ```bash
 curl http://localhost:8080/api/v1/workers
+```
+
+## Library Usage
+
+### Using as a Library
+
+You can embed the scheduler or worker in your Go application:
+
+**Embedding the Scheduler:**
+
+```go
+import (
+    "context"
+    "net/http"
+    "time"
+    "github.com/chicogong/dtask-scheduler/pkg/scheduler"
+)
+
+// Create state manager and handler
+state := scheduler.NewStateManager()
+handler := scheduler.NewHandler(state)
+
+// Setup HTTP routes
+mux := http.NewServeMux()
+mux.HandleFunc("/api/v1/heartbeat", handler.HandleHeartbeat)
+mux.HandleFunc("/api/v1/schedule", handler.HandleSchedule)
+mux.HandleFunc("/api/v1/workers", handler.HandleListWorkers)
+
+// Start background timeout checker
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+go func() {
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ticker.C:
+            state.CheckTimeouts()
+        case <-ctx.Done():
+            return
+        }
+    }
+}()
+
+// Start server
+http.ListenAndServe(":8080", mux)
+```
+
+**Embedding a Worker:**
+
+```go
+import (
+    "context"
+    "github.com/chicogong/dtask-scheduler/pkg/worker"
+)
+
+// Create and start heartbeat sender
+sender := worker.NewHeartbeatSender(
+    "worker-001",
+    "localhost:9001",
+    []string{"gpu", "cuda-12.0"},
+    30,
+    "http://localhost:8080",
+)
+
+ctx := context.Background()
+go sender.Start(ctx)
+
+// Update task count as needed
+sender.UpdateTaskCount(15)
+```
+
+**Using the Client Library:**
+
+```go
+import (
+    "context"
+    "github.com/chicogong/dtask-scheduler/pkg/client"
+    "github.com/chicogong/dtask-scheduler/pkg/types"
+)
+
+// Create client
+c := client.NewClient("http://localhost:8080")
+
+// Schedule a task
+resp, err := c.Schedule(context.Background(), &types.ScheduleRequest{
+    TaskID:       "task-001",
+    RequiredTags: []string{"gpu"},
+})
+if err != nil {
+    // Handle error
+}
+
+// Use worker info
+println("Scheduled to:", resp.WorkerID, resp.Address)
+
+// List all workers
+workers, err := c.ListWorkers(context.Background())
+```
+
+**Using Types:**
+
+```go
+import "github.com/chicogong/dtask-scheduler/pkg/types"
+
+req := &types.ScheduleRequest{
+    TaskID:       "task-001",
+    RequiredTags: []string{"gpu"},
+}
 ```
 
 ## Runtime Flags

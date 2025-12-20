@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chicogong/dtask-scheduler/internal/scheduler"
+	"github.com/chicogong/dtask-scheduler/pkg/scheduler"
 	"github.com/chicogong/dtask-scheduler/pkg/types"
 )
 
