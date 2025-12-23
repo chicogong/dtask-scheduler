@@ -51,7 +51,7 @@ func TestEndToEndScheduling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send heartbeat: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Heartbeat status = %d, want 200", resp.StatusCode)
@@ -66,7 +66,9 @@ func TestEndToEndScheduling(t *testing.T) {
 	defer resp.Body.Close()
 
 	var listedWorkers []*types.WorkerState
-	json.NewDecoder(resp.Body).Decode(&listedWorkers)
+	if err := json.NewDecoder(resp.Body).Decode(&listedWorkers); err != nil {
+		t.Fatalf("Failed to decode workers: %v", err)
+	}
 
 	if len(listedWorkers) != 2 {
 		t.Errorf("Listed %d workers, want 2", len(listedWorkers))
@@ -86,7 +88,9 @@ func TestEndToEndScheduling(t *testing.T) {
 	defer resp.Body.Close()
 
 	var schedResp types.ScheduleResponse
-	json.NewDecoder(resp.Body).Decode(&schedResp)
+	if err := json.NewDecoder(resp.Body).Decode(&schedResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if schedResp.Error != "" {
 		t.Errorf("Schedule error: %s", schedResp.Error)
@@ -110,7 +114,9 @@ func TestEndToEndScheduling(t *testing.T) {
 	defer resp.Body.Close()
 
 	var schedResp2 types.ScheduleResponse
-	json.NewDecoder(resp.Body).Decode(&schedResp2)
+	if err := json.NewDecoder(resp.Body).Decode(&schedResp2); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if schedResp2.WorkerID != "worker-002" {
 		t.Errorf("Scheduled to %s, want worker-002 (CPU worker)", schedResp2.WorkerID)
@@ -133,7 +139,9 @@ func TestEndToEndScheduling(t *testing.T) {
 	defer resp.Body.Close()
 
 	var schedResp3 types.ScheduleResponse
-	json.NewDecoder(resp.Body).Decode(&schedResp3)
+	if err := json.NewDecoder(resp.Body).Decode(&schedResp3); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if schedResp3.WorkerID != "worker-002" {
 		t.Errorf("Load balancing: scheduled to %s, want worker-002 (lower load)", schedResp3.WorkerID)

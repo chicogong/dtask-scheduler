@@ -30,7 +30,7 @@ func TestHeartbeat_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 	defer server.Close()
 
@@ -65,7 +65,7 @@ func TestSchedule_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(&types.ScheduleResponse{
+		_ = json.NewEncoder(w).Encode(&types.ScheduleResponse{
 			WorkerID: "worker-001",
 			Address:  "192.168.1.100:8080",
 		})
@@ -92,7 +92,7 @@ func TestSchedule_Success(t *testing.T) {
 func TestSchedule_NoWorkers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(&types.ScheduleResponse{
+		_ = json.NewEncoder(w).Encode(&types.ScheduleResponse{
 			Error: "no available worker matching requirements",
 		})
 	}))
@@ -146,7 +146,7 @@ func TestListWorkers_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(workers)
+		_ = json.NewEncoder(w).Encode(workers)
 	}))
 	defer server.Close()
 
@@ -167,7 +167,7 @@ func TestListWorkers_Success(t *testing.T) {
 func TestListWorkers_EmptyList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode([]*types.WorkerState{})
+		_ = json.NewEncoder(w).Encode([]*types.WorkerState{})
 	}))
 	defer server.Close()
 

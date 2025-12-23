@@ -41,7 +41,7 @@ func (h *Handler) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // HandleSchedule handles scheduling POST requests
@@ -67,7 +67,7 @@ func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Task %s scheduled to %s", req.TaskID, resp.WorkerID)
 		w.WriteHeader(http.StatusOK)
 	}
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // HandleListWorkers handles GET requests to list all workers
@@ -81,5 +81,5 @@ func (h *Handler) HandleListWorkers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(workers)
+	_ = json.NewEncoder(w).Encode(workers)
 }

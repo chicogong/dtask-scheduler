@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,12 +83,15 @@ func TestHeartbeatSender_SendHeartbeat(t *testing.T) {
 
 // TestHeartbeatSender_Interval verifies the 3s heartbeat interval
 func TestHeartbeatSender_Interval(t *testing.T) {
+	var mu sync.Mutex
 	heartbeatCount := 0
 	heartbeatTimes := []time.Time{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		heartbeatCount++
 		heartbeatTimes = append(heartbeatTimes, time.Now())
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -104,14 +108,20 @@ func TestHeartbeatSender_Interval(t *testing.T) {
 	time.Sleep(7 * time.Second)
 	cancel()
 
+	mu.Lock()
+	count := heartbeatCount
+	times := make([]time.Time, len(heartbeatTimes))
+	copy(times, heartbeatTimes)
+	mu.Unlock()
+
 	// Verify we received at least 3 heartbeats (1 immediate + 2 from ticker)
-	if heartbeatCount < 3 {
-		t.Errorf("Expected at least 3 heartbeats, got %d", heartbeatCount)
+	if count < 3 {
+		t.Errorf("Expected at least 3 heartbeats, got %d", count)
 	}
 
 	// Verify intervals are approximately 3 seconds (allow 500ms tolerance)
-	for i := 1; i < len(heartbeatTimes); i++ {
-		interval := heartbeatTimes[i].Sub(heartbeatTimes[i-1])
+	for i := 1; i < len(times); i++ {
+		interval := times[i].Sub(times[i-1])
 		if interval < 2500*time.Millisecond || interval > 3500*time.Millisecond {
 			t.Errorf("Heartbeat interval %v is not close to 3s (expected 2.5-3.5s)", interval)
 		}
@@ -124,7 +134,10 @@ func TestHeartbeatSender_UpdateTaskCount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var hb types.Heartbeat
-		json.Unmarshal(body, &hb)
+		if err := json.Unmarshal(body, &hb); err != nil {
+			t.Errorf("failed to unmarshal heartbeat: %v", err)
+			return
+		}
 		receivedHeartbeat = &hb
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -157,9 +170,12 @@ func TestHeartbeatSender_UpdateTaskCount(t *testing.T) {
 
 // TestHeartbeatSender_ContextCancellation verifies graceful shutdown
 func TestHeartbeatSender_ContextCancellation(t *testing.T) {
+	var mu sync.Mutex
 	heartbeatCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		heartbeatCount++
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -177,7 +193,9 @@ func TestHeartbeatSender_ContextCancellation(t *testing.T) {
 
 	// Wait for initial heartbeat
 	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
 	initialCount := heartbeatCount
+	mu.Unlock()
 
 	// Cancel context
 	cancel()
@@ -192,8 +210,11 @@ func TestHeartbeatSender_ContextCancellation(t *testing.T) {
 
 	// Verify no more heartbeats after cancellation
 	time.Sleep(3500 * time.Millisecond) // Wait longer than interval
-	if heartbeatCount > initialCount+1 {
-		t.Errorf("Heartbeats continued after context cancellation: %d -> %d", initialCount, heartbeatCount)
+	mu.Lock()
+	finalCount := heartbeatCount
+	mu.Unlock()
+	if finalCount > initialCount+1 {
+		t.Errorf("Heartbeats continued after context cancellation: %d -> %d", initialCount, finalCount)
 	}
 }
 

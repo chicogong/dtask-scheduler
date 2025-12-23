@@ -8,12 +8,12 @@ import (
 
 func TestHeartbeatSerialization(t *testing.T) {
 	hb := &Heartbeat{
-		WorkerID:      "worker-001",
-		Timestamp:     time.Now().Unix(),
-		ResourceTags:  []string{"gpu", "cuda-12.0"},
-		MaxTasks:      30,
-		CurrentTasks:  15,
-		Address:       "192.168.1.100:8080",
+		WorkerID:     "worker-001",
+		Timestamp:    time.Now().Unix(),
+		ResourceTags: []string{"gpu", "cuda-12.0"},
+		MaxTasks:     30,
+		CurrentTasks: 15,
+		Address:      "192.168.1.100:8080",
 	}
 
 	data, err := json.Marshal(hb)

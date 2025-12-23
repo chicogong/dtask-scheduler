@@ -18,14 +18,14 @@ import (
 // HeartbeatSender sends periodic heartbeats to the scheduler to maintain worker registration.
 // It tracks the worker's current task load and sends updates every 3 seconds.
 type HeartbeatSender struct {
-	workerID      string
-	address       string
-	resourceTags  []string
-	maxTasks      int
-	schedulerURL  string
-	interval      time.Duration
-	currentTasks  atomic.Int32
-	httpClient    *http.Client
+	workerID     string
+	address      string
+	resourceTags []string
+	maxTasks     int
+	schedulerURL string
+	interval     time.Duration
+	currentTasks atomic.Int32
+	httpClient   *http.Client
 }
 
 // NewHeartbeatSender creates a new heartbeat sender with the specified configuration.

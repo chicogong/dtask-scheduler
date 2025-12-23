@@ -66,7 +66,9 @@ func main() {
 		defer shutdownCancel()
 
 		cancel() // Stop timeout checker
-		server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Shutdown error: %v", err)
+		}
 	}()
 
 	log.Printf("Scheduler listening on port %s", *port)

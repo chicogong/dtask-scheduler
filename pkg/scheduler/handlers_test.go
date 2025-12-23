@@ -77,7 +77,9 @@ func TestHandleSchedule(t *testing.T) {
 	}
 
 	var resp types.ScheduleResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 
 	if resp.WorkerID != "worker-001" {
 		t.Errorf("Response workerID = %s, want worker-001", resp.WorkerID)
@@ -108,7 +110,9 @@ func TestHandleListWorkers(t *testing.T) {
 	}
 
 	var workers []*types.WorkerState
-	json.NewDecoder(w.Body).Decode(&workers)
+	if err := json.NewDecoder(w.Body).Decode(&workers); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 
 	if len(workers) != 1 {
 		t.Errorf("Response has %d workers, want 1", len(workers))
@@ -184,7 +188,9 @@ func TestHandleSchedule_NoAvailableWorkers(t *testing.T) {
 	}
 
 	var resp types.ScheduleResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 
 	if resp.Error == "" {
 		t.Error("Expected error message in response when no workers available")

@@ -27,14 +27,14 @@ type Heartbeat struct {
 // WorkerState represents the scheduler's view of a worker, including its current load,
 // resource tags, and availability status. This is maintained in-memory by the StateManager.
 type WorkerState struct {
-	WorkerID     string
-	Address      string
-	ResourceTags []string
-	MaxTasks     int
-	CurrentTasks int
-	Available    int
+	WorkerID      string
+	Address       string
+	ResourceTags  []string
+	MaxTasks      int
+	CurrentTasks  int
+	Available     int
 	LastHeartbeat time.Time
-	Status       WorkerStatus
+	Status        WorkerStatus
 }
 
 // WorkerStatus represents the health state of a worker based on heartbeat freshness.
