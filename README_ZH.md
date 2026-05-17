@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-167%20Passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-170%20Passed-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-88--100%25-brightgreen)](tests/)
 
 [English](README.md) | [简体中文](README_ZH.md)
@@ -49,7 +49,7 @@
 | 资源过滤 | ✅ 生产可用 | 基于标签的 Worker 匹配 |
 | 负载均衡 | ✅ 生产可用 | 基于负载率的选择算法 |
 | HTTP API | ✅ 生产可用 | 7个端点 + 完整错误处理 |
-| 集成测试 | ✅ 通过 | 167个测试，100% 通过率 |
+| 集成测试 | ✅ 通过 | 170个测试，100% 通过率 |
 | 高可用 | ✅ 生产可用 | 主备调度器 + 自动故障切换 |
 | 监控 | ✅ 生产可用 | Prometheus 指标、存活探针、JSON 统计 |
 | 标签索引 | ✅ 生产可用 | 倒排索引，快速标签交集 |

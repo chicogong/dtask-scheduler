@@ -109,6 +109,11 @@ func TestHeartbeatValidation(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "zero max tasks",
+			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: 0, CurrentTasks: 0},
+			wantErr: true,
+		},
+		{
 			name:    "negative current tasks",
 			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: 30, CurrentTasks: -5},
 			wantErr: true,

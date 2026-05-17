@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,5 +310,24 @@ func TestClient_NetworkErrors(t *testing.T) {
 	}
 	if err := client.Health(ctx); err == nil {
 		t.Error("Health: expected network error, got nil")
+	}
+}
+
+// TestSchedule_NonOKRawBody covers the non-2xx fallback path: a response whose
+// body has no "error" field must still surface the raw body in the error.
+func TestSchedule_NonOKRawBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream exploded"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	_, err := client.Schedule(context.Background(), &types.ScheduleRequest{TaskID: "t1"})
+	if err == nil {
+		t.Fatal("expected error for 502 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "upstream exploded") {
+		t.Errorf("error should include the raw response body, got: %v", err)
 	}
 }

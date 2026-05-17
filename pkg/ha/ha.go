@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync/atomic"
@@ -139,6 +140,8 @@ func (r *Replicator) ReplicateOnce(ctx context.Context) error {
 		return fmt.Errorf("ha: post to peer: %w", err)
 	}
 	defer resp.Body.Close()
+	// Drain the body so the keep-alive connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("ha: peer returned status %d", resp.StatusCode)
@@ -274,6 +277,8 @@ func (m *FailoverMonitor) checkHealth(ctx context.Context) bool {
 		return false
 	}
 	defer resp.Body.Close()
+	// Drain the body so the keep-alive connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }

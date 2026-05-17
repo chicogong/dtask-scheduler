@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-167%20Passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-170%20Passed-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-88--100%25-brightgreen)](tests/)
 
 [English](README.md) | [简体中文](README_ZH.md)
@@ -49,7 +49,7 @@ A distributed CPU/GPU task scheduler for large-scale batch jobs across thousands
 | Resource Filtering | ✅ Production Ready | Tag-based worker matching |
 | Load Balancing | ✅ Production Ready | Load ratio-based selection |
 | HTTP API | ✅ Production Ready | 7 endpoints with error handling |
-| Integration Tests | ✅ Passing | 167 tests, 100% pass rate |
+| Integration Tests | ✅ Passing | 170 tests, 100% pass rate |
 | High Availability | ✅ Production Ready | Master/standby with automatic failover |
 | Monitoring | ✅ Production Ready | Prometheus metrics, liveness probe, JSON stats |
 | Tag Indexing | ✅ Production Ready | Inverted index for fast tag-set intersection |

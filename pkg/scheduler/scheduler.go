@@ -15,9 +15,9 @@ const (
 	// are treated as equally idle and one is picked at random (hot-spot spread).
 	defaultSpreadThreshold = 0.05
 
-	// maxScheduleWait caps how long a waiting schedule request may block,
-	// regardless of the MaxWaitMS the client requested.
-	maxScheduleWait = 60 * time.Second
+	// maxScheduleWaitMS caps how long, in milliseconds, a waiting schedule
+	// request may block, regardless of the MaxWaitMS the client requested.
+	maxScheduleWaitMS = 60000
 )
 
 // Scheduler implements the core scheduling algorithm that selects the best
@@ -61,12 +61,14 @@ func (s *Scheduler) Schedule(ctx context.Context, req *types.ScheduleRequest) *t
 	}
 
 	// Resource shortage with an opt-in wait: park until a worker frees
-	// capacity, capped by both MaxWaitMS and maxScheduleWait.
-	wait := time.Duration(req.MaxWaitMS) * time.Millisecond
-	if wait > maxScheduleWait {
-		wait = maxScheduleWait
+	// capacity. Clamp the requested wait in milliseconds before converting to
+	// a Duration, so an absurdly large MaxWaitMS cannot overflow the int64
+	// nanosecond computation and silently bypass the cap.
+	waitMS := req.MaxWaitMS
+	if waitMS > maxScheduleWaitMS {
+		waitMS = maxScheduleWaitMS
 	}
-	deadline := time.NewTimer(wait)
+	deadline := time.NewTimer(time.Duration(waitMS) * time.Millisecond)
 	defer deadline.Stop()
 
 	for {

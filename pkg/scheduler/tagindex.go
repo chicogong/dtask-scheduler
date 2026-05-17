@@ -97,14 +97,21 @@ func (ti *tagIndex) hasAll(workerID string, required []string) bool {
 	return true
 }
 
-// sameTags reports whether two tag slices are element-wise equal. Workers
-// normally report tags in a stable order, so this fast path avoids index churn.
+// sameTags reports whether two tag slices contain the same multiset of tags,
+// independent of order. The index only needs reworking when the set of tags
+// actually changes, so a heartbeat that re-lists the same tags in a different
+// order is correctly treated as a no-op rather than triggering index churn.
 func sameTags(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	counts := make(map[string]int, len(a))
+	for _, tag := range a {
+		counts[tag]++
+	}
+	for _, tag := range b {
+		counts[tag]--
+		if counts[tag] < 0 {
 			return false
 		}
 	}

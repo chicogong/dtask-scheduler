@@ -38,8 +38,8 @@ func (h *Heartbeat) Validate() error {
 	if h.WorkerID == "" {
 		return errors.New("worker_id is required")
 	}
-	if h.MaxTasks < 0 {
-		return errors.New("max_tasks must not be negative")
+	if h.MaxTasks <= 0 {
+		return errors.New("max_tasks must be positive")
 	}
 	if h.CurrentTasks < 0 {
 		return errors.New("current_tasks must not be negative")

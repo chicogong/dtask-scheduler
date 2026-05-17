@@ -80,9 +80,10 @@ func TestSameTags(t *testing.T) {
 	}{
 		{"both nil", nil, nil, true},
 		{"equal", []string{"a", "b"}, []string{"a", "b"}, true},
+		{"same set, different order", []string{"a", "b"}, []string{"b", "a"}, true},
 		{"different length", []string{"a"}, []string{"a", "b"}, false},
-		{"different order", []string{"a", "b"}, []string{"b", "a"}, false},
 		{"different content", []string{"a"}, []string{"b"}, false},
+		{"duplicate mismatch", []string{"a", "a"}, []string{"a", "b"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
