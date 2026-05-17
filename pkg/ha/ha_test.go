@@ -380,17 +380,23 @@ func TestFailoverMonitor_NoPromoteOnHealthy(t *testing.T) {
 }
 
 func TestFailoverMonitor_HealthyResetsMidSequence(t *testing.T) {
-	// Pattern: fail, fail, ok, fail — with threshold 3 → no promotion.
-	// Sequence of responses controlled by a counter.
-	var reqNum int32
+	// Verify that a healthy check resets the consecutive-failure counter.
+	// The health server is driven in lock-step — it announces every request
+	// and waits for the test to choose the response — so the outcome never
+	// depends on how fast or how often the monitor polls.
+	type reply struct{ ok bool }
+	served := make(chan chan reply)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&reqNum, 1)
-		switch n {
-		case 1, 2: // fail
-			w.WriteHeader(http.StatusServiceUnavailable)
-		case 3: // reset
+		respCh := make(chan reply)
+		select {
+		case served <- respCh:
+		case <-r.Context().Done():
+			return // request canceled because the test has finished
+		}
+		if (<-respCh).ok {
 			w.WriteHeader(http.StatusOK)
-		default: // fail again, but counter was reset so threshold not reached yet
+		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 	}))
@@ -399,25 +405,36 @@ func TestFailoverMonitor_HealthyResetsMidSequence(t *testing.T) {
 	promoted := make(chan struct{}, 1)
 	onPromote := func() { promoted <- struct{}{} }
 
-	// With threshold=3 and pattern fail/fail/ok/fail the counter goes
-	// 1→2→0→1, so no promotion until we would accumulate 3 more failures.
-	// We stop after 5 requests (~100ms at 20ms interval) — promotion should not
-	// have fired because the reset dropped the counter back to 0 at request 3,
-	// and only 1 failure has accumulated after that.
-	const interval = 20 * time.Millisecond
-	mon := NewFailoverMonitor(srv.URL, interval, 3, onPromote)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	mon := NewFailoverMonitor(srv.URL, 5*time.Millisecond, 3, onPromote)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	go mon.Start(ctx)
-	<-ctx.Done()
 
+	// answer responds to the monitor's next poll with the given health status.
+	answer := func(ok bool) {
+		t.Helper()
+		select {
+		case respCh := <-served:
+			respCh <- reply{ok: ok}
+		case <-time.After(2 * time.Second):
+			t.Fatal("monitor did not poll within 2s")
+		}
+	}
+
+	answer(false) // poll 1: fail  -> consecutive failures = 1
+	answer(false) // poll 2: fail  -> consecutive failures = 2
+	answer(true)  // poll 3: ok    -> must reset failures to 0
+	answer(false) // poll 4: fail  -> 1 if the reset worked, 3 (-> promote) if not
+
+	// A monitor that reset on poll 3 has only 1 failure after poll 4 and keeps
+	// polling; a monitor that ignored the reset would have promoted at poll 4.
 	select {
 	case <-promoted:
-		t.Error("onPromote fired before threshold was reached after reset")
-	default:
-		// Expected: the healthy response mid-sequence prevented early promotion.
+		t.Error("onPromote fired after one post-reset failure; the healthy check did not reset the counter")
+	case respCh := <-served:
+		respCh <- reply{ok: true} // poll 5 arrived -> monitor still running -> reset worked
+	case <-time.After(2 * time.Second):
+		t.Fatal("monitor neither promoted nor polled again")
 	}
 }
 

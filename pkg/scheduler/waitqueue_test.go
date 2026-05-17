@@ -36,22 +36,28 @@ func TestCapacityNotifier_WakesMultipleWaiters(t *testing.T) {
 	n := newCapacityNotifier()
 
 	const waiters = 5
+	registered := make(chan struct{}, waiters)
 	done := make(chan struct{}, waiters)
 	for i := 0; i < waiters; i++ {
 		go func() {
-			<-n.waitChan()
+			ch := n.waitChan()       // capture the current channel...
+			registered <- struct{}{} // ...then announce we hold it
+			<-ch                     // a later broadcast closes this exact channel
 			done <- struct{}{}
 		}()
 	}
 
-	// Give the goroutines a moment to park, then wake them all at once.
-	time.Sleep(50 * time.Millisecond)
+	// Wait until every goroutine holds the current channel before broadcasting,
+	// so the test does not depend on goroutine start-up timing.
+	for i := 0; i < waiters; i++ {
+		<-registered
+	}
 	n.broadcast()
 
 	for i := 0; i < waiters; i++ {
 		select {
 		case <-done:
-		case <-time.After(time.Second):
+		case <-time.After(2 * time.Second):
 			t.Fatalf("only %d/%d waiters woke up", i, waiters)
 		}
 	}
