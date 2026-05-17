@@ -2,12 +2,14 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/chicogong/dtask-scheduler/pkg/ha"
 	"github.com/chicogong/dtask-scheduler/pkg/scheduler"
 	"github.com/chicogong/dtask-scheduler/pkg/types"
 )
@@ -145,5 +147,47 @@ func TestEndToEndScheduling(t *testing.T) {
 
 	if schedResp3.WorkerID != "worker-002" {
 		t.Errorf("Load balancing: scheduled to %s, want worker-002 (lower load)", schedResp3.WorkerID)
+	}
+}
+
+// TestHAReplication exercises the master→standby replication path end to end:
+// a master snapshots its worker table, pushes it to a standby's sync endpoint,
+// and the standby reconstructs fully usable state (including the tag index).
+func TestHAReplication(t *testing.T) {
+	// Standby scheduler: state fed only by replication via /api/v1/sync.
+	standbyState := scheduler.NewStateManager()
+	standbyMux := http.NewServeMux()
+	standbyMux.HandleFunc("/api/v1/sync", ha.NewSyncHandler(standbyState))
+	standbyServer := httptest.NewServer(standbyMux)
+	defer standbyServer.Close()
+
+	// Master scheduler: register a worker via heartbeat.
+	masterState := scheduler.NewStateManager()
+	masterState.UpdateFromHeartbeat(&types.Heartbeat{
+		WorkerID:     "worker-001",
+		Address:      "10.0.0.1:9000",
+		ResourceTags: []string{"gpu", "cuda-12.0"},
+		MaxTasks:     30,
+		CurrentTasks: 5,
+	})
+
+	// Replicate the master's state to the standby once.
+	replicator := ha.NewReplicator(masterState, standbyServer.URL+"/api/v1/sync", time.Second)
+	if err := replicator.ReplicateOnce(context.Background()); err != nil {
+		t.Fatalf("replication failed: %v", err)
+	}
+
+	// The standby must now see the worker.
+	workers := standbyState.ListWorkers()
+	if len(workers) != 1 {
+		t.Fatalf("standby has %d workers after replication, want 1", len(workers))
+	}
+	if workers[0].WorkerID != "worker-001" {
+		t.Errorf("standby worker = %s, want worker-001", workers[0].WorkerID)
+	}
+
+	// The standby's tag index must be rebuilt so the worker is schedulable.
+	if got := standbyState.CandidatesByTags([]string{"gpu", "cuda-12.0"}); len(got) != 1 {
+		t.Errorf("standby tag index not rebuilt: %d candidates for [gpu cuda-12.0], want 1", len(got))
 	}
 }

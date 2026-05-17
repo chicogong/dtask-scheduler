@@ -242,3 +242,69 @@ func TestHeartbeatSender_HTTPTimeout(t *testing.T) {
 		t.Errorf("HTTP request completed too quickly: %v (expected ~5s timeout)", elapsed)
 	}
 }
+
+// TestHeartbeatSender_DualSend verifies a heartbeat reaches both the primary
+// scheduler and every registered standby.
+func TestHeartbeatSender_DualSend(t *testing.T) {
+	var mu sync.Mutex
+	hits := map[string]int{}
+
+	newServer := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			hits[name]++
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}))
+	}
+
+	primary := newServer("primary")
+	defer primary.Close()
+	standby := newServer("standby")
+	defer standby.Close()
+
+	sender := NewHeartbeatSender("test-worker", "localhost:9000", []string{"cpu"}, 10, primary.URL)
+	sender.AddStandby(standby.URL)
+	sender.send()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["primary"] != 1 {
+		t.Errorf("primary received %d heartbeats, want 1", hits["primary"])
+	}
+	if hits["standby"] != 1 {
+		t.Errorf("standby received %d heartbeats, want 1", hits["standby"])
+	}
+}
+
+// TestHeartbeatSender_UpdateMetrics verifies resource metrics set via
+// UpdateMetrics are carried in the heartbeat payload.
+func TestHeartbeatSender_UpdateMetrics(t *testing.T) {
+	var mu sync.Mutex
+	var received *types.Heartbeat
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var hb types.Heartbeat
+		if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+			t.Errorf("failed to decode heartbeat: %v", err)
+		}
+		mu.Lock()
+		received = &hb
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	sender := NewHeartbeatSender("test-worker", "localhost:9000", []string{"gpu"}, 10, server.URL)
+	sender.UpdateMetrics(types.WorkerMetrics{CPUUsage: 0.5, MemoryUsage: 0.4, GPUUsage: 0.9})
+	sender.send()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if received == nil {
+		t.Fatal("no heartbeat received")
+	}
+	if received.Metrics.CPUUsage != 0.5 || received.Metrics.MemoryUsage != 0.4 || received.Metrics.GPUUsage != 0.9 {
+		t.Errorf("Metrics = %+v, want {CPU:0.5 Mem:0.4 GPU:0.9}", received.Metrics)
+	}
+}

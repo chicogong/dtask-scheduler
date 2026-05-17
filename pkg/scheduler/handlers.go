@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/chicogong/dtask-scheduler/pkg/observability"
 	"github.com/chicogong/dtask-scheduler/pkg/types"
 )
 
-// Handler holds HTTP handlers for the scheduler
+// Handler holds HTTP handlers for the scheduler.
 type Handler struct {
 	state     *StateManager
 	scheduler *Scheduler
+	metrics   *observability.Metrics // optional; nil disables metric recording
 }
 
-// NewHandler creates a new handler
+// NewHandler creates a new handler without metric recording.
 func NewHandler(state *StateManager) *Handler {
 	return &Handler{
 		state:     state,
@@ -22,7 +25,27 @@ func NewHandler(state *StateManager) *Handler {
 	}
 }
 
-// HandleHeartbeat handles worker heartbeat POST requests
+// NewHandlerWithMetrics creates a new handler that records scheduling and
+// heartbeat activity into the given metrics collector.
+func NewHandlerWithMetrics(state *StateManager, metrics *observability.Metrics) *Handler {
+	h := NewHandler(state)
+	h.metrics = metrics
+	return h
+}
+
+func (h *Handler) recordSchedule(d time.Duration, success bool) {
+	if h.metrics != nil {
+		h.metrics.RecordSchedule(d, success)
+	}
+}
+
+func (h *Handler) recordHeartbeat() {
+	if h.metrics != nil {
+		h.metrics.RecordHeartbeat()
+	}
+}
+
+// HandleHeartbeat handles worker heartbeat POST requests.
 func (h *Handler) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -35,7 +58,13 @@ func (h *Handler) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := hb.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	h.state.UpdateFromHeartbeat(&hb)
+	h.recordHeartbeat()
 
 	log.Printf("Heartbeat received from %s: %d/%d tasks", hb.WorkerID, hb.CurrentTasks, hb.MaxTasks)
 
@@ -44,7 +73,7 @@ func (h *Handler) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// HandleSchedule handles scheduling POST requests
+// HandleSchedule handles scheduling POST requests.
 func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -57,7 +86,9 @@ func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := h.scheduler.Schedule(&req)
+	start := time.Now()
+	resp := h.scheduler.Schedule(r.Context(), &req)
+	h.recordSchedule(time.Since(start), resp.Error == "")
 
 	w.Header().Set("Content-Type", "application/json")
 	if resp.Error != "" {
@@ -70,7 +101,7 @@ func (h *Handler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// HandleListWorkers handles GET requests to list all workers
+// HandleListWorkers handles GET requests to list all workers.
 func (h *Handler) HandleListWorkers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

@@ -181,6 +181,33 @@ func (c *Client) ListWorkers(ctx context.Context) ([]*types.WorkerState, error) 
 	return workers, nil
 }
 
+// Health checks scheduler liveness via GET /healthz. It returns nil when the
+// scheduler responds 200 OK, or an error describing the failure otherwise.
+//
+// Example:
+//
+//	if err := client.Health(ctx); err != nil {
+//	    log.Printf("scheduler unhealthy: %v", err)
+//	}
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/healthz", nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("health check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return c.parseError(resp)
+	}
+
+	return nil
+}
+
 // parseError extracts error information from HTTP response
 func (c *Client) parseError(resp *http.Response) error {
 	var errResp struct {

@@ -13,15 +13,38 @@ var (
 	ErrNoCapacity     = errors.New("worker has no available capacity")
 )
 
+// WorkerMetrics reports a worker's resource utilization, sampled and sent with
+// each heartbeat. Values are ratios in the range 0.0 to 1.0.
+type WorkerMetrics struct {
+	CPUUsage    float64 `json:"cpu_usage"`
+	MemoryUsage float64 `json:"memory_usage"`
+	GPUUsage    float64 `json:"gpu_usage"`
+}
+
 // Heartbeat represents worker health and capacity info sent periodically to the scheduler.
 // Workers send heartbeats every 3 seconds to maintain their registration and report current load.
 type Heartbeat struct {
-	WorkerID     string   `json:"worker_id"`
-	Timestamp    int64    `json:"timestamp"`
-	ResourceTags []string `json:"resource_tags"`
-	MaxTasks     int      `json:"max_tasks"`
-	CurrentTasks int      `json:"current_tasks"`
-	Address      string   `json:"address"` // IP:Port for client connections
+	WorkerID     string        `json:"worker_id"`
+	Timestamp    int64         `json:"timestamp"`
+	ResourceTags []string      `json:"resource_tags"`
+	MaxTasks     int           `json:"max_tasks"`
+	CurrentTasks int           `json:"current_tasks"`
+	Address      string        `json:"address"` // IP:Port for client connections
+	Metrics      WorkerMetrics `json:"metrics"` // resource utilization
+}
+
+// Validate checks that the heartbeat carries the minimum required fields.
+func (h *Heartbeat) Validate() error {
+	if h.WorkerID == "" {
+		return errors.New("worker_id is required")
+	}
+	if h.MaxTasks < 0 {
+		return errors.New("max_tasks must not be negative")
+	}
+	if h.CurrentTasks < 0 {
+		return errors.New("current_tasks must not be negative")
+	}
+	return nil
 }
 
 // WorkerState represents the scheduler's view of a worker, including its current load,
@@ -35,6 +58,7 @@ type WorkerState struct {
 	Available     int
 	LastHeartbeat time.Time
 	Status        WorkerStatus
+	Metrics       WorkerMetrics
 }
 
 // WorkerStatus represents the health state of a worker based on heartbeat freshness.
@@ -59,6 +83,11 @@ func (w *WorkerState) LoadRatio() float64 {
 type ScheduleRequest struct {
 	TaskID       string   `json:"task_id"`
 	RequiredTags []string `json:"required_tags"`
+
+	// MaxWaitMS, when positive, asks the scheduler to wait up to this many
+	// milliseconds for a worker to free capacity instead of failing
+	// immediately when the pool is saturated. Zero or negative means fail fast.
+	MaxWaitMS int `json:"max_wait_ms,omitempty"`
 }
 
 // Validate checks if the request is valid

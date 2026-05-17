@@ -2,8 +2,8 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-31%20Passed-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/Coverage-84--100%25-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-167%20Passed-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-88--100%25-brightgreen)](tests/)
 
 [English](README.md) | [简体中文](README_ZH.md)
 
@@ -20,9 +20,13 @@ A distributed CPU/GPU task scheduler for large-scale batch jobs across thousands
 
 - **Zero dependencies**: No Redis, Kafka, or other middleware required
 - **High performance**: Sub-millisecond scheduling latency (< 1ms)
-- **Load balancing**: Automatic task distribution based on worker load
-- **Resource matching**: Tag-based worker filtering (GPU, CPU, CUDA versions, etc.)
+- **Load balancing**: Automatic task distribution based on worker load with hot-spot spread
+- **Resource matching**: Tag-based worker filtering (GPU, CPU, CUDA versions, etc.) via inverted index
 - **Simple deployment**: Single binary for scheduler and worker
+- **High availability**: Master/standby with automatic failover
+- **Observability**: Prometheus metrics, liveness probe, and JSON stats endpoint
+- **Wait queue**: Optional long-poll scheduling to absorb brief capacity spikes
+- **Middleware**: Panic recovery, access logging, body size limit, and request ID on every handler
 
 ## Performance Metrics
 
@@ -34,7 +38,7 @@ A distributed CPU/GPU task scheduler for large-scale batch jobs across thousands
 | **Heartbeat Overhead** | 33KB/s | Network bandwidth for 500 workers |
 | **Memory Usage** | < 3MB | Scheduler memory footprint for 500 workers |
 | **Timeout Detection** | 10s/20s | Suspicious/Offline thresholds |
-| **Test Coverage** | 84-100% | Unit and integration test coverage |
+| **Test Coverage** | 88-100% | Unit and integration test coverage |
 
 ## Status
 
@@ -44,11 +48,13 @@ A distributed CPU/GPU task scheduler for large-scale batch jobs across thousands
 | Worker Agent | ✅ Production Ready | Heartbeat sender with graceful shutdown |
 | Resource Filtering | ✅ Production Ready | Tag-based worker matching |
 | Load Balancing | ✅ Production Ready | Load ratio-based selection |
-| HTTP API | ✅ Production Ready | 3 endpoints with error handling |
-| Integration Tests | ✅ Passing | 31 tests, 100% pass rate |
-| High Availability | 🚧 Planned | Standby scheduler with failover |
-| Monitoring | 🚧 Planned | Metrics and alerting |
-| Tag Indexing | 🚧 Planned | Performance optimization |
+| HTTP API | ✅ Production Ready | 7 endpoints with error handling |
+| Integration Tests | ✅ Passing | 167 tests, 100% pass rate |
+| High Availability | ✅ Production Ready | Master/standby with automatic failover |
+| Monitoring | ✅ Production Ready | Prometheus metrics, liveness probe, JSON stats |
+| Tag Indexing | ✅ Production Ready | Inverted index for fast tag-set intersection |
+| Wait Queue | ✅ Production Ready | Long-poll scheduling for capacity spikes |
+| Middleware | ✅ Production Ready | Panic recovery, logging, size limit, request ID |
 
 ## Architecture
 
@@ -84,9 +90,9 @@ sequenceDiagram
     participant State
     participant Worker
 
-    Client->>Scheduler: POST /schedule (task_id, required_tags)
-    Scheduler->>State: Filter by tags & availability
-    Scheduler->>Scheduler: Sort by load ratio
+    Client->>Scheduler: POST /schedule (task_id, required_tags, max_wait_ms)
+    Scheduler->>State: Filter by tags & availability (inverted index)
+    Scheduler->>Scheduler: Sort by load ratio, pick randomly among near-minimum set
     Scheduler-->>Client: worker_id + address
 
     loop every 3s
@@ -251,6 +257,9 @@ println("Scheduled to:", resp.WorkerID, resp.Address)
 
 // List all workers
 workers, err := c.ListWorkers(context.Background())
+
+// Check scheduler liveness
+err = c.Health(context.Background())
 ```
 
 **Using Types:**
@@ -271,6 +280,15 @@ req := &types.ScheduleRequest{
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port` | `8080` | Listening port |
+| `--role` | `master` | Scheduler role: `master` or `standby` |
+| `--peer` | (empty) | Peer scheduler base URL (master replicates to it; standby health-checks it) |
+| `--replication-interval` | `2s` | How often the master replicates worker state to the standby |
+| `--failover-interval` | `2s` | How often the standby health-checks the master |
+| `--failover-threshold` | `3` | Consecutive failed health checks before the standby self-promotes |
+| `--suspicious-threshold` | `10s` | Heartbeat age before a worker is marked suspicious |
+| `--offline-threshold` | `20s` | Heartbeat age before a worker is marked offline |
+| `--timeout-check-interval` | `5s` | How often the scheduler scans for stale workers |
+| `--max-body-bytes` | `1048576` | Maximum accepted request body size, in bytes |
 
 ### worker
 
@@ -281,43 +299,51 @@ req := &types.ScheduleRequest{
 | `--tags` | `cpu` | Resource tags, comma-separated |
 | `--max-tasks` | `30` | Maximum concurrent tasks |
 | `--scheduler` | `http://localhost:8080` | Scheduler base URL |
+| `--standby` | (empty) | Standby scheduler URL; when set, heartbeats are dual-sent here as well |
 
 ## API Overview
 
 Base URL: `http://localhost:8080/api/v1`
 
 - `POST /heartbeat`: Worker heartbeat
-- `POST /schedule`: Schedule a task
+- `POST /schedule`: Schedule a task (optional `max_wait_ms` for long-poll)
 - `GET /workers`: List workers
+- `POST /api/v1/sync`: Internal replication endpoint (standby only)
+
+Observability endpoints (root path, no `/api/v1` prefix):
+
+- `GET /healthz`: Liveness probe — returns `{"status":"ok"}`
+- `GET /metrics`: Prometheus text metrics
+- `GET /stats`: JSON aggregate of worker counts, capacity, and scheduling counters
 
 See [docs/api.md](docs/api.md) for details.
 
 ## Scheduling Algorithm
 
-1. **Filter by tags**: Only workers with ALL required tags are considered
+1. **Filter by tags**: A tag inverted index intersects the candidate sets of the required tags, so filtering scales with the number of matching workers instead of the whole pool
 2. **Filter by availability**: Offline workers or workers at max capacity are excluded
 3. **Sort by load ratio**: `load_ratio = current_tasks / max_tasks`
-4. **Select lowest**: Worker with lowest load ratio is selected
+4. **Spread**: All workers whose load ratio is within 0.05 of the minimum form a candidate set; one is chosen at random to avoid hot-spotting
 5. **Optimistic allocation**: Task count incremented immediately (corrected by next heartbeat)
+6. **Wait queue (optional)**: If `max_wait_ms > 0` in the request and no worker is available, the scheduler blocks up to that many milliseconds (hard cap: 60000ms) for a worker to free capacity before returning 503
 
 ## Project Structure
 
 ```
 dtask-scheduler/
 ├── cmd/
-│   ├── scheduler/      # Scheduler entry
-│   └── worker/         # Worker entry
-├── internal/
-│   ├── scheduler/      # Scheduler core logic
-│   │   ├── algorithm.go   # Scheduling algorithm
-│   │   ├── handlers.go    # HTTP handlers
-│   │   └── state.go       # State manager
-│   └── worker/         # Worker core logic
-│       └── heartbeat.go   # Heartbeat sender
+│   ├── scheduler/      # scheduler entrypoint
+│   └── worker/         # worker entrypoint
 ├── pkg/
-│   └── types/          # Shared types
-├── tests/              # Integration tests
-└── docs/               # Documentation
+│   ├── types/          # shared data structures
+│   ├── scheduler/      # core scheduling: state, algorithm, HTTP handlers, tag index, wait queue, config
+│   ├── worker/         # worker heartbeat agent
+│   ├── client/         # Go HTTP client library
+│   ├── observability/  # metrics collector + /healthz, /metrics, /stats endpoints
+│   ├── ha/             # master/standby replication + failover
+│   └── middleware/     # composable HTTP middleware
+├── tests/              # integration tests
+└── docs/               # documentation
 ```
 
 ## Development & Testing
@@ -349,10 +375,10 @@ go test ./tests -v
 ## Roadmap
 
 - [x] MVP: Single scheduler + heartbeat + basic scheduling
-- [ ] High availability: Standby scheduler with failover
-- [ ] Monitoring: Metrics and alerting
-- [ ] Tag indexing: Faster resource filtering
-- [ ] Queue: Wait queue for resource shortage
+- [x] High availability: Master/standby with automatic failover
+- [x] Monitoring: Prometheus metrics, liveness probe, JSON stats
+- [x] Tag indexing: Inverted index for fast resource filtering
+- [x] Wait queue: Long-poll scheduling for brief capacity spikes
 - [ ] Task priority: Preempting low-priority tasks
 - [ ] Resource reservation: CPU/memory/GPU memory reservations
 

@@ -213,3 +213,101 @@ func TestSchedule_InvalidRequest(t *testing.T) {
 		t.Fatal("expected validation error, got nil")
 	}
 }
+
+func TestHealth_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != "GET" {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHealth_Unhealthy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Health(context.Background()); err == nil {
+		t.Fatal("expected error for 503 response, got nil")
+	}
+}
+
+func TestErrorTypes(t *testing.T) {
+	schedErr := &ErrSchedulingFailed{Reason: "no available worker"}
+	if got := schedErr.Error(); got != "scheduling failed: no available worker" {
+		t.Errorf("ErrSchedulingFailed.Error() = %q", got)
+	}
+	if !IsSchedulingError(schedErr) {
+		t.Error("IsSchedulingError should be true for *ErrSchedulingFailed")
+	}
+
+	respErr := &ErrInvalidResponse{StatusCode: 503, Body: "unavailable"}
+	if got := respErr.Error(); got != "invalid response (HTTP 503): unavailable" {
+		t.Errorf("ErrInvalidResponse.Error() = %q", got)
+	}
+	if IsSchedulingError(respErr) {
+		t.Error("IsSchedulingError should be false for *ErrInvalidResponse")
+	}
+}
+
+func TestHeartbeat_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "boom"})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Heartbeat(context.Background(), &types.Heartbeat{WorkerID: "w1"}); err == nil {
+		t.Fatal("expected error for 500 response, got nil")
+	}
+}
+
+func TestListWorkers_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if _, err := client.ListWorkers(context.Background()); err == nil {
+		t.Fatal("expected error for 500 response, got nil")
+	}
+}
+
+// TestClient_NetworkErrors points the client at a server that has already been
+// shut down, so every method fails at the transport layer.
+func TestClient_NetworkErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := server.URL
+	server.Close()
+
+	client := NewClient(url)
+	ctx := context.Background()
+
+	if err := client.Heartbeat(ctx, &types.Heartbeat{WorkerID: "w1"}); err == nil {
+		t.Error("Heartbeat: expected network error, got nil")
+	}
+	if _, err := client.Schedule(ctx, &types.ScheduleRequest{TaskID: "t1"}); err == nil {
+		t.Error("Schedule: expected network error, got nil")
+	}
+	if _, err := client.ListWorkers(ctx); err == nil {
+		t.Error("ListWorkers: expected network error, got nil")
+	}
+	if err := client.Health(ctx); err == nil {
+		t.Error("Health: expected network error, got nil")
+	}
+}

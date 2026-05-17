@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chicogong/dtask-scheduler/pkg/observability"
 	"github.com/chicogong/dtask-scheduler/pkg/types"
 )
 
@@ -208,5 +209,56 @@ func TestHandleListWorkers_MethodNotAllowed(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("HandleListWorkers() with POST status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleHeartbeat_ValidationRejected(t *testing.T) {
+	handler := NewHandler(NewStateManager())
+
+	// Structurally valid JSON but missing the required worker_id.
+	body := []byte(`{"max_tasks":10,"current_tasks":0}`)
+	req := httptest.NewRequest("POST", "/api/v1/heartbeat", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleHeartbeat(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("HandleHeartbeat() with missing worker_id status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandler_MetricsRecording(t *testing.T) {
+	metrics := observability.NewMetrics()
+	handler := NewHandlerWithMetrics(NewStateManager(), metrics)
+
+	// One heartbeat registering a GPU worker.
+	hbBody, _ := json.Marshal(&types.Heartbeat{
+		WorkerID:     "worker-001",
+		Address:      "10.0.0.1:9000",
+		ResourceTags: []string{"gpu"},
+		MaxTasks:     10,
+		CurrentTasks: 0,
+	})
+	hbReq := httptest.NewRequest("POST", "/api/v1/heartbeat", bytes.NewReader(hbBody))
+	handler.HandleHeartbeat(httptest.NewRecorder(), hbReq)
+
+	// One successful schedule onto that worker.
+	schedBody, _ := json.Marshal(&types.ScheduleRequest{
+		TaskID:       "task-001",
+		RequiredTags: []string{"gpu"},
+	})
+	schedReq := httptest.NewRequest("POST", "/api/v1/schedule", bytes.NewReader(schedBody))
+	handler.HandleSchedule(httptest.NewRecorder(), schedReq)
+
+	snap := metrics.Snapshot()
+	if snap.Heartbeats != 1 {
+		t.Errorf("Heartbeats = %d, want 1", snap.Heartbeats)
+	}
+	if snap.ScheduleRequests != 1 {
+		t.Errorf("ScheduleRequests = %d, want 1", snap.ScheduleRequests)
+	}
+	if snap.ScheduleSuccesses != 1 {
+		t.Errorf("ScheduleSuccesses = %d, want 1", snap.ScheduleSuccesses)
 	}
 }
