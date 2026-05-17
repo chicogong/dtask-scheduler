@@ -87,6 +87,49 @@ func TestScheduleRequestValidation(t *testing.T) {
 	}
 }
 
+func TestHeartbeatValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		hb      *Heartbeat
+		wantErr bool
+	}{
+		{
+			name:    "valid heartbeat",
+			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: 30, CurrentTasks: 15},
+			wantErr: false,
+		},
+		{
+			name:    "missing worker id",
+			hb:      &Heartbeat{WorkerID: "", MaxTasks: 30, CurrentTasks: 15},
+			wantErr: true,
+		},
+		{
+			name:    "negative max tasks",
+			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: -1, CurrentTasks: 0},
+			wantErr: true,
+		},
+		{
+			name:    "zero max tasks",
+			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: 0, CurrentTasks: 0},
+			wantErr: true,
+		},
+		{
+			name:    "negative current tasks",
+			hb:      &Heartbeat{WorkerID: "worker-001", MaxTasks: 30, CurrentTasks: -5},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.hb.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestWorkerState_LoadRatio(t *testing.T) {
 	tests := []struct {
 		name         string

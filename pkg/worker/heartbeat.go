@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,10 @@ type HeartbeatSender struct {
 	interval     time.Duration
 	currentTasks atomic.Int32
 	httpClient   *http.Client
+
+	mu          sync.Mutex
+	metrics     types.WorkerMetrics // resource utilization, guarded by mu
+	standbyURLs []string            // additional schedulers, guarded by mu
 }
 
 // NewHeartbeatSender creates a new heartbeat sender with the specified configuration.
@@ -85,18 +90,40 @@ func (h *HeartbeatSender) UpdateTaskCount(count int) {
 	h.currentTasks.Store(int32(count))
 }
 
-// send sends a single heartbeat to the scheduler.
-// It marshals the current worker state into JSON and POSTs it to the scheduler's heartbeat endpoint.
-// Errors are logged but do not stop the heartbeat sender from continuing.
+// UpdateMetrics updates the resource-utilization metrics (CPU/memory/GPU usage)
+// reported in subsequent heartbeats. Safe for concurrent use.
+func (h *HeartbeatSender) UpdateMetrics(m types.WorkerMetrics) {
+	h.mu.Lock()
+	h.metrics = m
+	h.mu.Unlock()
+}
+
+// AddStandby registers an additional scheduler URL (a standby) that will
+// receive a copy of every heartbeat. Call it before Start.
+func (h *HeartbeatSender) AddStandby(schedulerURL string) {
+	h.mu.Lock()
+	h.standbyURLs = append(h.standbyURLs, schedulerURL)
+	h.mu.Unlock()
+}
+
+// send sends a single heartbeat to the primary scheduler and every registered
+// standby. Heartbeats are POSTed concurrently so a slow standby does not delay
+// delivery to the primary. Errors are logged but never stop the sender.
 func (h *HeartbeatSender) send() {
+	h.mu.Lock()
 	hb := &types.Heartbeat{
 		WorkerID:     h.workerID,
 		Address:      h.address,
 		ResourceTags: h.resourceTags,
 		MaxTasks:     h.maxTasks,
 		CurrentTasks: int(h.currentTasks.Load()),
+		Metrics:      h.metrics,
 		Timestamp:    time.Now().Unix(),
 	}
+	targets := make([]string, 0, 1+len(h.standbyURLs))
+	targets = append(targets, h.schedulerURL)
+	targets = append(targets, h.standbyURLs...)
+	h.mu.Unlock()
 
 	body, err := json.Marshal(hb)
 	if err != nil {
@@ -104,18 +131,30 @@ func (h *HeartbeatSender) send() {
 		return
 	}
 
-	url := fmt.Sprintf("%s/api/v1/heartbeat", h.schedulerURL)
+	var wg sync.WaitGroup
+	for _, target := range targets {
+		wg.Add(1)
+		go func(schedulerURL string) {
+			defer wg.Done()
+			h.postHeartbeat(schedulerURL, body)
+		}(target)
+	}
+	wg.Wait()
+
+	log.Printf("Heartbeat sent: %d/%d tasks to %d scheduler(s)", h.currentTasks.Load(), h.maxTasks, len(targets))
+}
+
+// postHeartbeat delivers one heartbeat body to a single scheduler endpoint.
+func (h *HeartbeatSender) postHeartbeat(schedulerURL string, body []byte) {
+	url := fmt.Sprintf("%s/api/v1/heartbeat", schedulerURL)
 	resp, err := h.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("Failed to send heartbeat: %v", err)
+		log.Printf("Failed to send heartbeat to %s: %v", schedulerURL, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Heartbeat failed with status: %d", resp.StatusCode)
-		return
+		log.Printf("Heartbeat to %s failed with status: %d", schedulerURL, resp.StatusCode)
 	}
-
-	log.Printf("Heartbeat sent: %d/%d tasks", h.currentTasks.Load(), h.maxTasks)
 }

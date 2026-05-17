@@ -138,7 +138,70 @@ sudo systemctl start dtask-worker
 sudo systemctl status dtask-worker
 ```
 
-## 监控
+## 高可用（主备模式）
+
+调度器支持主备 HA 对。主节点定期将 Worker 状态同步到备节点；备节点对主节点进行健康检查，主节点不可达时自动晋升为主节点。
+
+### 终端 1：启动主调度器
+
+```bash
+./bin/scheduler \
+  --port=8080 \
+  --role=master \
+  --peer=http://localhost:8081
+```
+
+### 终端 2：启动备调度器
+
+```bash
+./bin/scheduler \
+  --port=8081 \
+  --role=standby \
+  --peer=http://localhost:8080
+```
+
+### 启动 Worker 并开启双发心跳
+
+通过 `--standby` 参数，Worker 将同时向主备两个调度器发送心跳：
+
+```bash
+./bin/worker \
+  --id=worker-gpu-001 \
+  --addr=localhost:9001 \
+  --tags=gpu,cuda-12.0 \
+  --max-tasks=30 \
+  --scheduler=http://localhost:8080 \
+  --standby=http://localhost:8081
+```
+
+**故障切换行为：** 备节点每 2 秒（可通过 `--failover-interval` 配置）请求一次 `GET http://localhost:8080/healthz`。连续 3 次失败（可通过 `--failover-threshold` 配置）后，备节点自动晋升为主节点并开始接受调度请求。
+
+备节点角色期间，`POST /api/v1/schedule` 将返回 `503`。
+
+## 可观测性
+
+### 存活探针
+
+```bash
+curl http://localhost:8080/healthz
+# {"status":"ok"}
+```
+
+### Prometheus 指标
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+返回 Prometheus 文本格式，包含计数器（`dtask_schedule_requests_total`、`dtask_schedule_successes_total`、`dtask_schedule_failures_total`、`dtask_heartbeats_total`）、调度延迟仪表盘（`dtask_schedule_latency_avg_ms`、`dtask_schedule_latency_max_ms`）以及 Worker/容量仪表盘。
+
+### JSON 统计汇总
+
+```bash
+curl http://localhost:8080/stats | jq
+```
+
+返回各状态 Worker 数量、容量总量、集群平均负载率以及调度统计计数。
 
 ### 查看 Worker 状态
 
@@ -148,7 +211,7 @@ watch -n 1 'curl -s http://localhost:8080/api/v1/workers | jq'
 
 ### 日志
 
-调度器与 Worker 日志输出到 stdout,可重定向到文件:
+调度器与 Worker 日志输出到 stdout，可重定向到文件：
 
 ```bash
 ./scheduler 2>&1 | tee scheduler.log

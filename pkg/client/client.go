@@ -127,18 +127,31 @@ func (c *Client) Schedule(ctx context.Context, req *types.ScheduleRequest) (*typ
 	}
 	defer resp.Body.Close()
 
-	var schedResp types.ScheduleResponse
-	if err := json.NewDecoder(resp.Body).Decode(&schedResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	// Read the body once: it is needed both to decode the response and, on a
+	// non-2xx status, to surface the raw body in the error. Decoding straight
+	// from resp.Body would exhaust it before the error path could read it.
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	// Check for scheduling errors in response
-	if schedResp.Error != "" {
+	var schedResp types.ScheduleResponse
+	decodeErr := json.Unmarshal(bodyBytes, &schedResp)
+
+	// A scheduling failure is reported via the response's error field.
+	if decodeErr == nil && schedResp.Error != "" {
 		return &schedResp, &ErrSchedulingFailed{Reason: schedResp.Error}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return &schedResp, c.parseError(resp)
+		return &schedResp, &ErrInvalidResponse{
+			StatusCode: resp.StatusCode,
+			Body:       string(bodyBytes),
+		}
+	}
+
+	if decodeErr != nil {
+		return nil, fmt.Errorf("decode response: %w", decodeErr)
 	}
 
 	return &schedResp, nil
@@ -179,6 +192,33 @@ func (c *Client) ListWorkers(ctx context.Context) ([]*types.WorkerState, error) 
 	}
 
 	return workers, nil
+}
+
+// Health checks scheduler liveness via GET /healthz. It returns nil when the
+// scheduler responds 200 OK, or an error describing the failure otherwise.
+//
+// Example:
+//
+//	if err := client.Health(ctx); err != nil {
+//	    log.Printf("scheduler unhealthy: %v", err)
+//	}
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/healthz", nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("health check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return c.parseError(resp)
+	}
+
+	return nil
 }
 
 // parseError extracts error information from HTTP response

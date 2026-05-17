@@ -138,7 +138,70 @@ sudo systemctl start dtask-worker
 sudo systemctl status dtask-worker
 ```
 
-## Monitoring
+## High Availability (Master / Standby)
+
+The scheduler supports an active/standby HA pair. The master replicates worker state to the standby; the standby health-checks the master and self-promotes if the master becomes unreachable.
+
+### Terminal 1: Start Master Scheduler
+
+```bash
+./bin/scheduler \
+  --port=8080 \
+  --role=master \
+  --peer=http://localhost:8081
+```
+
+### Terminal 2: Start Standby Scheduler
+
+```bash
+./bin/scheduler \
+  --port=8081 \
+  --role=standby \
+  --peer=http://localhost:8080
+```
+
+### Start Workers with Dual Heartbeat
+
+Pass `--standby` so each worker sends its heartbeat to both schedulers simultaneously:
+
+```bash
+./bin/worker \
+  --id=worker-gpu-001 \
+  --addr=localhost:9001 \
+  --tags=gpu,cuda-12.0 \
+  --max-tasks=30 \
+  --scheduler=http://localhost:8080 \
+  --standby=http://localhost:8081
+```
+
+**Failover behavior:** The standby polls `GET http://localhost:8080/healthz` every 2 seconds (configurable with `--failover-interval`). After 3 consecutive failures (configurable with `--failover-threshold`), the standby automatically promotes itself to master and begins accepting scheduling requests.
+
+While in standby role, `POST /api/v1/schedule` is rejected with `503`.
+
+## Observability
+
+### Liveness Probe
+
+```bash
+curl http://localhost:8080/healthz
+# {"status":"ok"}
+```
+
+### Prometheus Metrics
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+Returns Prometheus text format with counters (`dtask_schedule_requests_total`, `dtask_schedule_successes_total`, `dtask_schedule_failures_total`, `dtask_heartbeats_total`), scheduling latency gauges (`dtask_schedule_latency_avg_ms`, `dtask_schedule_latency_max_ms`), and worker/capacity gauges.
+
+### JSON Stats Aggregate
+
+```bash
+curl http://localhost:8080/stats | jq
+```
+
+Returns worker counts by status, capacity totals, cluster average load ratio, and scheduling counters.
 
 ### Check Worker Status
 

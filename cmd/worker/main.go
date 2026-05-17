@@ -19,6 +19,7 @@ func main() {
 	tags := flag.String("tags", "cpu", "Resource tags (comma-separated)")
 	maxTasks := flag.Int("max-tasks", 30, "Maximum concurrent tasks")
 	schedulerURL := flag.String("scheduler", "http://localhost:8080", "Scheduler URL")
+	standbyURL := flag.String("standby", "", "Standby scheduler URL for dual-send heartbeats (optional)")
 	flag.Parse()
 
 	log.Println("dtask-worker starting...")
@@ -33,6 +34,10 @@ func main() {
 	}
 
 	sender := worker.NewHeartbeatSender(*workerID, *address, resourceTags, *maxTasks, *schedulerURL)
+	if *standbyURL != "" {
+		sender.AddStandby(*standbyURL)
+		log.Printf("Standby scheduler: %s (dual-send enabled)", *standbyURL)
+	}
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
